@@ -85,7 +85,7 @@ Trong Supabase Dashboard → **Database → Webhooks**:
 - URL: `https://rsjonbpkocfylnpdvach.supabase.co/functions/v1/send-push`
 - Headers: `Authorization: Bearer <service_role_key>`
 
-Hoặc chạy file `create_webhook_via_sql.sql` (đã có sẵn key service_role).
+Hoặc tạo webhook bằng SQL trực tiếp trong SQL Editor (thay URL và service_role key theo cửa hàng của bạn).
 
 ### 3.4. Authentication
 
