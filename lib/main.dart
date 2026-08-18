@@ -210,7 +210,7 @@ class _RepairShopAppState extends ConsumerState<RepairShopApp> with WidgetsBindi
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: 'Manager Mobile App',
+      title: 'Manager MSR',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       locale: const Locale('vi', 'VN'),

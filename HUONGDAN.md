@@ -1,6 +1,6 @@
 # Hướng Dẫn Cài Đặt & Sử Dụng
 
-**Manager Mobile App · v2.0.0** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows).
+**Manager MSR · v2.1.0** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows).
 
 ## 0. Xem hướng dẫn ngay trong app
 
@@ -48,24 +48,11 @@ defaultConfig {
 
 ### 3.1. Chạy schema
 
-Vào **Supabase Dashboard → SQL Editor**, chạy lần lượt các file sau:
+Vào **Supabase Dashboard → SQL Editor**, chạy file `database/schema_full.sql`.
 
-| Thứ tự | File | Mục đích |
-|--------|------|----------|
-| 1 | `supabase/schema.sql` | Bảng + RLS + helper functions |
-| 2 | `supabase/patch_trash_and_categories.sql` | Soft delete, categories |
-| 3 | `supabase/patch_status_aging.sql` | Cảnh báo đơn "ì" |
-| 4 | `supabase/patch_repaired_by.sql` | Ghi nhận người sửa |
-| 5 | `supabase/patch_realtime_tables.sql` | Bật Realtime cho các bảng |
-| 6 | `supabase/patch_profiles_insert_policy.sql` | Fix stack depth limit |
-| 7 | `supabase/patch_employee_invites.sql` | Bảng mời nhân viên |
-| 8 | `supabase/patch_device_types_and_photos.sql` | Bảng loại máy, ảnh |
-| 9 | `supabase/patch_inventory_fields.sql` | Barcode, IMEI, kho |
-| 10 | `supabase/patch_finance_full.sql` | Tài chính nâng cao |
-| 11 | `supabase/patch_store_settings.sql` | Cài đặt cửa hàng, in, Discord |
-| 12 | `supabase/patch_customer_type_and_qr.sql` | Phân loại khách, QR code |
+File này chứa toàn bộ schema hoàn chỉnh (bảng, RLS, functions, triggers, storage, realtime) đã được gộp từ tất cả migrations. Chỉ cần chạy **1 lần duy nhất** — đã bao gồm tất cả các patch.
 
-**Lưu ý**: Tất cả patch file đều idempotent (có `IF NOT EXISTS` / `DROP IF EXISTS`) nên có thể chạy lại an toàn.
+**Lưu ý**: File idempotent (có `IF NOT EXISTS` / `DROP IF EXISTS`) nên có thể chạy lại an toàn nếu bị lỗi giữa chừng.
 
 Sau khi chạy xong, **kiểm tra Realtime** đã bật cho các bảng chưa. Vào **Supabase Dashboard → Database → Replication**, đảm bảo publication `supabase_realtime` có tick tất cả bảng.
 
@@ -243,20 +230,28 @@ Vào **Cài đặt → Giao diện in** để nhập dòng chạy đầu và cu�
 | Bảng | Mục đích |
 |------|----------|
 | `stores` | Cửa hàng (tên, mã, địa chỉ, bank info, webhook, printer) |
-| `profiles` | Người dùng (vai trò, username, hoa hồng, Discord ID) |
+| `profiles` | Người dùng (vai trò, username, hoaồng, Discord ID) |
 | `customers` | Khách hàng (lẻ/sỉ, xoá mềm) |
 | `repair_orders` | Đơn sửa chữa (realtime, soft delete) |
-| `inventory_parts` | Linh kiện (barcode, IMEI, tồn kho) |
+| `repair_order_status_history` | Lịch sử trạng thái đơn |
+| `part_categories` | Phân loại linh kiện |
+| `inventory_parts` | Linh kiện (barcode, IMEI, tồn kho, NCC) |
+| `inventory_transactions` | Giao dịch kho (nhập/xuất/điều chỉnh) |
 | `stock_counts` | Lịch sử kiểm kho |
+| `cash_accounts` | Tài khoản tiền mặt/chuyển khoản |
 | `transactions` | Giao dịch thu/chi |
-| `debt_transactions` | Công nợ |
+| `debts` | Công nợ |
+| `debt_transactions` | Chi tiết công nợ |
 | `salary_payments` | Trả lương & hoa hồng |
 | `notifications` | Thông báo push (DB Webhook → Edge Function → FCM) |
 | `qr_codes` | Mã QR bảo hành |
-| `device_types` | Danh sách loại máy (iPhone, Samsung, ...) |
 | `employee_invites` | Mời nhân viên |
+| `app_logs` | Nhật ký hoạt động |
 | Storage bucket `backups` | File backup JSON (tự động + thủ công) |
+| Storage bucket `repair-photos` | Ảnh sửa máy |
 | RPC `restore_store_data` | Khôi phục dữ liệu cửa hàng từ backup (atomic) |
+| RPC `clear_store_data` | Xóa toàn bộ dữ liệu nghiệp vụ (Admin) |
+| RPC `decrement_stock` | Tự động trừ tồn kho nguyên tử |
 
 ---
 
@@ -273,7 +268,7 @@ Vào **Cài đặt → Giao diện in** để nhập dòng chạy đầu và cu�
 ## 11. FAQ / Xử lý sự cố
 
 **Q**: Mất kết nối Realtime, dữ liệu không cập nhật tự động?
-**R**: Vào **Supabase Dashboard → Database → Replication** kiểm tra publication `supabase_realtime` đã có đủ bảng chưa. Chạy lại `patch_realtime_tables.sql`.
+**R**: Vào **Supabase Dashboard → Database → Replication** kiểm tra publication `supabase_realtime` đã có đủ bảng chưa. Chạy lại file `database/schema_full.sql`.
 
 **Q**: Đăng nhập Google báo lỗi?
 **R**: Kiểm tra Web Client ID trong `lib/core/app_config.dart` khớp với Google Cloud Console. Thêm SHA-1 release nếu build bản release.

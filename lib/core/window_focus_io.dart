@@ -7,7 +7,7 @@ import 'package:win32/win32.dart';
 
 /// Tiêu đề cửa sổ native, phải khớp với chuỗi truyền vào `window.Create(...)`
 /// trong `windows/runner/main.cpp`.
-const _windowTitle = 'Manager Mobile App';
+const _windowTitle = 'Manager MSR';
 
 /// Đưa cửa sổ app Windows lên trước (foreground) sau khi trình duyệt hoàn
 /// tất đăng nhập Google, để người dùng không phải tự bấm lại vào app.

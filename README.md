@@ -1,8 +1,8 @@
-# App Quản Lý Cửa Hàng Sửa Chữa Điện Thoại
+# Manager MSR — Ứng Dụng Quản Lý Cửa Hàng Sửa Chữa Điện Thoại
 
 Flutter (Android + Windows) + Supabase (Auth, DB realtime, Storage) + Firebase Cloud Messaging.
 
-**Manager Mobile App · v2.0.0**
+**Manager MSR · v2.1.0**
 
 ## Tính năng đã hoàn thiện
 

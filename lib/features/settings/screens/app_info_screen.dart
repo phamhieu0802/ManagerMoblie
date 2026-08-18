@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-const String kAppName = 'Manager Mobile App';
-const String kAppVersion = 'v2.0.0';
+const String kAppName = 'Manager MSR';
+const String kAppVersion = 'v2.1.0';
 
 /// Trang thông tin ứng dụng: phiên bản, tính năng và hướng dẫn sử dụng.
 class AppInfoScreen extends StatelessWidget {
@@ -60,7 +60,7 @@ class _AppHeader extends StatelessWidget {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 14)),
           const SizedBox(height: 8),
           Text(
-            'Phần mềm quản lý cửa hàng sửa chữa điện thoại — đơn hàng, kho linh kiện, tài chính, nhân viên và in hóa đơn.',
+            'Phần mềm quản lý cửa hàng sửa chữa điện thoại — đơn hàng, kho linh kiện, tài chính, công nợ, lương & hoa hồng, nhân viên và in hóa đơn.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.92), fontSize: 13, height: 1.4),
           ),
@@ -141,15 +141,16 @@ class _FeaturesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: const [
-        _FeatureItem(icon: Icons.dashboard_outlined, title: 'Dashboard tổng quan', desc: 'Doanh thu, đơn đang làm, đơn quá hạn; lọc theo nhân viên kỹ thuật.' ),
-        _FeatureItem(icon: Icons.receipt_long_outlined, title: 'Đơn sửa chữa', desc: 'Tạo/sửa đơn realtime, chọn linh kiện, chụp ảnh máy, cập nhật trạng thái nhanh, thanh toán, in hóa đơn, xóa mềm và khôi phục từ thùng rác.' ),
-        _FeatureItem(icon: Icons.people_outline, title: 'Khách hàng', desc: 'Danh sách khách, phân loại lẻ/sỉ, lịch sử giao dịch.' ),
-        _FeatureItem(icon: Icons.inventory_2_outlined, title: 'Kho linh kiện', desc: 'Quản lý tồn kho, barcode/IMEI, nhãn hiệu, giá sỉ/lẻ, kiểm kho, cập nhật giá hàng loạt, tự động trừ kho khi xuất.' ),
-        _FeatureItem(icon: Icons.account_balance_wallet_outlined, title: 'Tài chính', desc: 'Thu/chi/lãi, giao dịch, công nợ (khách hàng & nhà cung cấp), trả lương & hoa hồng.' ),
+        _FeatureItem(icon: Icons.dashboard_outlined, title: 'Dashboard tổng quan', desc: 'Biểu đồ thu/chi theo tháng, bảng tổng hợp ngày/tháng, lọc theo nhân viên.' ),
+        _FeatureItem(icon: Icons.receipt_long_outlined, title: 'Đơn sửa chữa', desc: 'Tạo/sửa đơn realtime, chọn linh kiện, chụp ảnh, trạng thái nhanh, thanh toán, in hóa đơn, xóa mềm & khôi phục từ thùng rác.' ),
+        _FeatureItem(icon: Icons.people_outline, title: 'Khách hàng', desc: 'Danh sách khách, phân loại lẻ/sỉ, gộp thẻ, đa chọn, lịch sử giao dịch.' ),
+        _FeatureItem(icon: Icons.inventory_2_outlined, title: 'Kho linh kiện', desc: 'Quản lý tồn kho, barcode, giá sỉ/lẻ, kiểm kho, tự động trừ kho khi xuất.' ),
+        _FeatureItem(icon: Icons.account_balance_wallet_outlined, title: 'Tài chính', desc: 'Thu/chi/lãi, lọc thời gian, công nợ (khách hàng & NCC), trả lương & hoa hồng KTV.' ),
         _FeatureItem(icon: Icons.supervisor_account_outlined, title: 'Quản lý nhân viên', desc: '3 vai trò Admin/Lễ tân/KTV, hoa hồng theo %, khóa/mở tài khoản.' ),
         _FeatureItem(icon: Icons.print_outlined, title: 'In hóa đơn', desc: 'Máy in nhiệt qua Bluetooth (Android) hoặc TCP/IP (Windows); header/footer tùy chỉnh.' ),
         _FeatureItem(icon: Icons.qr_code_2_outlined, title: 'Mã QR bảo hành', desc: 'Tự sinh mã QR cho từng đơn, kèm thông tin bảo hành.' ),
         _FeatureItem(icon: Icons.notifications_active_outlined, title: 'Thông báo', desc: 'Push notification qua Firebase + Discord webhook khi có đơn mới hoặc đổi trạng thái.' ),
+        _FeatureItem(icon: Icons.cloud_upload_outlined, title: 'Sao lưu & khôi phục', desc: 'Sao lưu lên đám mây, tải về máy, tự động hằng ngày; khôi phục atomic trong 1 giao dịch.' ),
         _FeatureItem(icon: Icons.verified_user_outlined, title: 'Bảo mật', desc: 'Đăng nhập Google hoặc mã cửa hàng + username, phân quyền theo vai trò (RLS).' ),
       ],
     );

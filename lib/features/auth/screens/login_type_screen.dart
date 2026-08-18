@@ -20,7 +20,7 @@ class LoginTypeScreen extends StatelessWidget {
                   const Icon(Icons.phone_android_rounded, size: 84, color: Color(0xFF2563EB)),
                   const SizedBox(height: 12),
                   const Text(
-                    'Manager Mobile App',
+                    'Manager MSR',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
