@@ -42,13 +42,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/app/google-services.json
+/android/build/
+/android/app/build/
 
 # Supabase local temp
 supabase/.temp/
-
-# Local scripts
-set_fcm_secret_windows.ps1
-create_webhook_via_sql.sql
 
 # Build outputs
 *.apk
@@ -65,3 +63,6 @@ phuong/
 db/
 *.db
 *.json.bak
+
+# Windows build
+/windows/flutter/ephemeral/
