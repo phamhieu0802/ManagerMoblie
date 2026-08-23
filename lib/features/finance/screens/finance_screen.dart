@@ -982,23 +982,25 @@ class _DebtsTabState extends State<_DebtsTab> {
                     final totalDebt = debts.fold<num>(0, (s, d) => s + ((d['total_debt'] as num?) ?? 0));
                     final count = debts.length;
                     final phone = debts.first['contact_phone'] ?? '';
+                    final address = debts.first['contact_address'] ?? '';
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 3),
                       child: ListTile(
                         leading: Icon(icon, color: color, size: 22),
                         title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                         subtitle: Text(
-                          '${count > 1 ? '$count khoản nợ · ' : ''}$phone',
-                          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11),
+                          [
+                            if (phone.isNotEmpty) phone,
+                            if (address.isNotEmpty) address,
+                          ].join(' · '),
+                          maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11),
                         ),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                           Text(_currency.format(totalDebt), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: color)),
                           const SizedBox(width: 4),
                           const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
                         ]),
-                        onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => DebtGroupDetailScreen(debts: debts, groupName: name),
-                        )),
+                        onTap: () => _showDebtOrdersDialog(context, debts, name),
                       ),
                     );
                   },
@@ -1015,6 +1017,175 @@ class _DebtsTabState extends State<_DebtsTab> {
       ),
     );
   }
+
+  /// Hiển thị dialog danh sách hóa đơn liên kết khi bấm vào thẻ nợ.
+  Future<void> _showDebtOrdersDialog(
+    BuildContext context,
+    List<Map<String, dynamic>> debts,
+    String contactName,
+  ) async {
+    final totalDebt = debts.fold<num>(0, (s, d) => s + ((d['total_debt'] as num?) ?? 0));
+    final isCustomer = (debts.first['type'] ?? '') == 'customer';
+    final color = isCustomer ? Colors.orange : Colors.red;
+
+    // Lấy tất cả debt_id + contact_phone
+    final debtIds = debts.map((d) => d['id'] as String).toList();
+    final contactPhones = debts
+        .map((d) => (d['contact_phone'] ?? '').toString().trim())
+        .where((p) => p.isNotEmpty)
+        .toSet()
+        .toList();
+
+    List<Map<String, dynamic>> orderItems = [];
+
+    if (isCustomer) {
+      // Khách nợ: tìm đơn theo SĐT khách hàng
+      // 1) Tìm customer_ids theo SĐT
+      Set<String> customerIds = {};
+      if (contactPhones.isNotEmpty) {
+        try {
+          final custRows = await SupabaseService.client
+              .from('customers')
+              .select('id')
+              .inFilter('phone', contactPhones);
+          for (final c in custRows as List) {
+            customerIds.add(c['id'] as String);
+          }
+        } catch (_) {}
+      }
+
+      // 2) Tìm repair_orders theo customer_id + chưa thanh toán (debt/null payment)
+      if (customerIds.isNotEmpty) {
+        try {
+          final orderRows = await SupabaseService.client
+              .from('repair_orders')
+              .select('id, code, status, final_cost, estimated_cost, payment_method, paid_at, device_model, customer_id')
+              .inFilter('customer_id', customerIds.toList())
+              .not('status', 'eq', 'cancelled');
+          for (final o in orderRows as List) {
+            final paid = o['paid_at'] != null;
+            final isDebt = o['payment_method'] == 'debt';
+            final cost = ((o['final_cost'] as num?) ?? 0) > 0
+                ? (o['final_cost'] as num)
+                : ((o['estimated_cost'] as num?) ?? 0);
+            orderItems.add({
+              'repair_order_id': o['id'] as String,
+              'code': o['code'] ?? 'N/A',
+              'status': o['status'] ?? 'unknown',
+              'cost': cost,
+              'paid': paid && !isDebt,
+              'device_model': o['device_model'] ?? '',
+              'debt_tx_id': null,
+            });
+          }
+        } catch (_) {}
+      }
+
+      // 3) Fallback: nếu không tìm thấy customer, parse từ debt_transactions description
+      if (orderItems.isEmpty) {
+        try {
+          final dtRows = await SupabaseService.client
+              .from('debt_transactions')
+              .select('id, amount, description, type')
+              .inFilter('debt_id', debtIds)
+              .eq('type', 'add')
+              .isFilter('deleted_at', null)
+              .order('created_at', ascending: false);
+          for (final dt in dtRows as List) {
+            final desc = (dt['description'] ?? '').toString();
+            // Description format: "Đơn SCxxxxx"
+            final match = RegExp(r'Đơn\s+(SC[\w-]+)').firstMatch(desc);
+            if (match != null) {
+              final code = match.group(1)!;
+              try {
+                final orows = await SupabaseService.client
+                    .from('repair_orders')
+                    .select('id, code, status, final_cost, estimated_cost, payment_method, paid_at, device_model')
+                    .eq('code', code)
+                    .limit(1);
+                if ((orows as List).isNotEmpty) {
+                  final o = orows.first;
+                  final paid = o['paid_at'] != null;
+                  final isDebt = o['payment_method'] == 'debt';
+                  final cost = ((o['final_cost'] as num?) ?? 0) > 0
+                      ? (o['final_cost'] as num)
+                      : ((o['estimated_cost'] as num?) ?? 0);
+                  orderItems.add({
+                    'repair_order_id': o['id'] as String,
+                    'code': o['code'] ?? code,
+                    'status': o['status'] ?? 'unknown',
+                    'cost': cost,
+                    'paid': paid && !isDebt,
+                    'device_model': o['device_model'] ?? '',
+                    'debt_tx_id': dt['id'] as String,
+                  });
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+    } else {
+      // Nợ NCC: tìm theo debt_transactions.repair_order_id
+      List<Map<String, dynamic>> dtRows = [];
+      try {
+        final rows = await SupabaseService.client
+            .from('debt_transactions')
+            .select('id, amount, description, repair_order_id, type, created_at')
+            .inFilter('debt_id', debtIds)
+            .eq('type', 'add')
+            .isFilter('deleted_at', null)
+            .order('created_at', ascending: false);
+        dtRows = (rows as List).where((r) => r['repair_order_id'] != null).cast<Map<String, dynamic>>().toList();
+      } catch (_) {}
+
+      if (dtRows.isNotEmpty) {
+        final orderIds = dtRows.map((r) => r['repair_order_id'] as String).toSet().toList();
+        Map<String, Map<String, dynamic>> orderMap = {};
+        try {
+          final orderRows = await SupabaseService.client
+              .from('repair_orders')
+              .select('id, code, status, final_cost, estimated_cost, payment_method, paid_at, device_model')
+              .inFilter('id', orderIds);
+          for (final r in orderRows as List) {
+            orderMap[r['id'] as String] = Map<String, dynamic>.from(r);
+          }
+        } catch (_) {}
+
+        for (final dt in dtRows) {
+          final orderId = dt['repair_order_id'] as String;
+          final order = orderMap[orderId];
+          final cost = order != null
+              ? ((order['final_cost'] as num?) ?? 0) > 0
+                  ? (order['final_cost'] as num)
+                  : ((order['estimated_cost'] as num?) ?? 0)
+              : (dt['amount'] as num?) ?? 0;
+          orderItems.add({
+            'debt_tx_id': dt['id'],
+            'repair_order_id': orderId,
+            'code': order?['code'] ?? 'N/A',
+            'status': order?['status'] ?? 'unknown',
+            'cost': cost,
+            'paid': order?['payment_method'] != null && order?['payment_method'] != 'debt',
+            'device_model': order?['device_model'] ?? '',
+          });
+        }
+      }
+    }
+
+    if (!context.mounted) return;
+
+    // Hiển thị dialog chọn đơn + thanh toán
+    await showDebtOrdersPaymentDialog(
+      context: context,
+      contactName: contactName,
+      totalDebt: totalDebt,
+      color: color,
+      isCustomer: isCustomer,
+      orderItems: orderItems,
+      debts: debts,
+    );
+  }
 }
 
 class DebtGroupDetailScreen extends StatelessWidget {
@@ -1028,12 +1199,15 @@ class DebtGroupDetailScreen extends StatelessWidget {
     final isCustomer = (debts.first['type'] ?? '') == 'customer';
     final color = isCustomer ? Colors.orange : Colors.red;
 
+    final phone = (debts.first['contact_phone'] ?? '').toString();
+    final addr = (debts.first['contact_address'] ?? '').toString();
+
     return Scaffold(
       appBar: AppBar(title: Text(groupName, maxLines: 1, overflow: TextOverflow.ellipsis)),
       body: SafeArea(
         top: false,
         child: Column(children: [
-          // Tổng nợ
+          // Tổng nợ + SĐT + Địa chỉ
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -1042,9 +1216,16 @@ class DebtGroupDetailScreen extends StatelessWidget {
               Text('Tổng nợ', style: TextStyle(color: color, fontSize: 12)),
               const SizedBox(height: 4),
               Text(_currency.format(totalDebt), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: color)),
+              if (phone.isNotEmpty || addr.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  [if (phone.isNotEmpty) phone, if (addr.isNotEmpty) addr].join(' · '),
+                  style: TextStyle(color: color.withValues(alpha: 0.7), fontSize: 12),
+                ),
+              ],
             ]),
           ),
-          // Danh sách khoản nợ
+          // Danh sách khoản nợ (read-only)
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(10),
@@ -1067,14 +1248,7 @@ class DebtGroupDetailScreen extends StatelessWidget {
                       return Text(info.isEmpty ? 'Không có ghi chú' : info,
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11));
                     }),
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      IconButton(
-                        icon: const Icon(Icons.add, size: 18),
-                        tooltip: 'Phát sinh',
-                        onPressed: () => showAddDebtTxDialog(context, d),
-                      ),
-                      const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
-                    ]),
+                    trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
                     onTap: () => showDebtDetail(context, d),
                   ),
                 );

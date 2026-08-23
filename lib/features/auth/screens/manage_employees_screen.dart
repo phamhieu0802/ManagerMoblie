@@ -99,6 +99,8 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
   Future<void> _showInviteGoogleDialog() async {
     final emailCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
     UserRole role = UserRole.technician;
     bool sending = false;
     String? error;
@@ -118,6 +120,17 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                     labelText: 'Email Gmail của nhân viên',
                     helperText: 'Hệ thống sẽ gửi email mời xác nhận tới địa chỉ này',
                   ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'Số điện thoại'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: addressCtrl,
+                  decoration: const InputDecoration(labelText: 'Địa chỉ'),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<UserRole>(
@@ -157,6 +170,8 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                               'email': emailCtrl.text.trim(),
                               'full_name': nameCtrl.text.trim(),
                               'role': role.name,
+                              if (phoneCtrl.text.trim().isNotEmpty) 'phone': phoneCtrl.text.trim(),
+                              if (addressCtrl.text.trim().isNotEmpty) 'address': addressCtrl.text.trim(),
                             },
                           );
                           if (ctx.mounted) {
@@ -185,6 +200,8 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
     final usernameCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     final passCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
     UserRole role = UserRole.technician;
     bool saving = false;
     String? error;
@@ -216,6 +233,17 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                       onPressed: () => setStateDialog(regeneratePassword),
                     ),
                   ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'Số điện thoại'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: addressCtrl,
+                  decoration: const InputDecoration(labelText: 'Địa chỉ'),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<UserRole>(
@@ -270,6 +298,8 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                               'password': passCtrl.text,
                               'full_name': nameCtrl.text.trim(),
                               'role': role.name,
+                              if (phoneCtrl.text.trim().isNotEmpty) 'phone': phoneCtrl.text.trim(),
+                              if (addressCtrl.text.trim().isNotEmpty) 'address': addressCtrl.text.trim(),
                             },
                           );
                           if (ctx.mounted) {
@@ -502,7 +532,15 @@ class _ManageEmployeesScreenState extends State<ManageEmployeesScreen> {
                               : p.role == UserRole.receptionist ? Icons.support_agent : Icons.build,
                         ),
                       ),
-                      title: Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ),
+                          if (p.discordId != null && p.discordId!.isNotEmpty)
+                            Icon(Icons.discord, size: 16, color: const Color(0xFF5865F2)),
+                        ],
+                      ),
                       subtitle: Text('${roleLabel(p.role)}${_commissionSuffix(p)}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,

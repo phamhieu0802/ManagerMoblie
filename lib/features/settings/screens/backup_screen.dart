@@ -73,11 +73,11 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       );
       final path = await BackupController.saveToLocalFile(payload);
       if (mounted) {
-        _toast('Đã sao lưu xong!\n$path');
+        _toast('Đã tải về máy!\n$path');
       }
     } catch (e) {
-      AppLogger.instance.error('Sao lưu file thất bại', category: 'backup', error: e);
-      if (mounted) _toast('Lỗi sao lưu: ${friendlyError(e)}');
+      AppLogger.instance.error('Tải file thất bại', category: 'backup', error: e);
+      if (mounted) _toast('Lỗi tải file: ${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -102,29 +102,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     } catch (e) {
       AppLogger.instance.error('Sao lưu đám mây thất bại', category: 'backup', error: e);
       if (mounted) _toast('Lỗi sao lưu lên đám mây: ${friendlyError(e)}');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _backupToLocal() async {
-    final store = ref.read(storeDetailProvider(widget.storeId)).value;
-    if (store == null) {
-      _toast('Không tải được thông tin cửa hàng.');
-      return;
-    }
-    setState(() => _saving = true);
-    try {
-      final path = await BackupController.backupToLocal(
-        storeId: widget.storeId,
-        storeCode: store.storeCode,
-        storeName: store.name,
-      );
-      await _refreshLocalList();
-      if (mounted) _toast('Đã sao lưu local:\n$path');
-    } catch (e) {
-      AppLogger.instance.error('Sao lưu local thất bại', category: 'backup', error: e);
-      if (mounted) _toast('Lỗi sao lưu local: ${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -230,29 +207,22 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                     children: [
                       _LastBackupInfo(store: store),
                       const SizedBox(height: 10),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 140,
                             child: OutlinedButton.icon(
                               onPressed: _saving ? null : _backupToFile,
                               icon: _saving
                                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                                   : const Icon(Icons.file_download_outlined),
-                              label: const Text('Chọn nơi lưu'),
+                              label: const Text('Tải về máy'),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _saving ? null : _backupToLocal,
-                              icon: _saving
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : const Icon(Icons.save_outlined),
-                              label: const Text('Sao lưu local'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
+                          SizedBox(
+                            width: 140,
                             child: ElevatedButton.icon(
                               onPressed: _saving ? null : _backupToCloud,
                               icon: _saving

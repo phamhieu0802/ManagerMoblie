@@ -3,11 +3,18 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:printing/printing.dart';
+import 'printer_config_service.dart';
+import 'bluetooth_printer_service.dart';
+import 'windows_printer_service.dart';
+import 'laser_receipt_builder.dart';
+import '../models/store.dart';
+import '../models/repair_order.dart';
+import 'app_logger.dart';
 
 /// Dịch vụ in ấn hỗ trợ:
-/// - Bluetooth máy in nhiệt (Xprinter / POS 80mm) trên Android
-/// - Kết nối mạng (TCP) trên Windows
-/// - Xem trước hóa đơn
+/// - Máy in nhiệt: Bluetooth (Android) / TCP IP:Port / USB RAW (Windows)
+/// - Máy in laser: PDF A5 qua hệ thống Windows
 class PrinterService {
   static const _charsPerLine = 32;
 
@@ -16,18 +23,30 @@ class PrinterService {
   static final List<int> _escCut = [0x1D, 0x56, 0x00];
   static final List<int> _escLineFeed = [0x0A];
 
-  /// Gửi lệnh in ESC/POS qua Bluetooth (Android) hoặc TCP (Windows)
+  /// In phiếu — tự detect loại máy in từ PrinterConfig đã lưu.
   static Future<String?> printReceipt({
     required String printerAddress,
     required String receiptText,
     Uint8List? qrImageBytes,
     String? bankInfoText,
+    PrinterType printerType = PrinterType.thermal,
   }) async {
     try {
+      if (printerType == PrinterType.laser) {
+        return 'Laser PDF phải dùng printLaserPdf()';
+      }
+      // Nhiệt: Android → Bluetooth, Windows → TCP hoặc USB RAW
       if (Platform.isAndroid) {
-        return await _printBluetooth(printerAddress, receiptText, qrImageBytes: qrImageBytes, bankInfoText: bankInfoText);
+        return await _printBluetooth(printerAddress, receiptText,
+            qrImageBytes: qrImageBytes, bankInfoText: bankInfoText);
       } else if (Platform.isWindows) {
-        return await _printTcp(printerAddress, receiptText, qrImageBytes: qrImageBytes, bankInfoText: bankInfoText);
+        if (printerAddress.contains(':') && int.tryParse(printerAddress.split(':').last) != null) {
+          return await _printTcp(printerAddress, receiptText,
+              qrImageBytes: qrImageBytes, bankInfoText: bankInfoText);
+        } else {
+          return await _printUsbRaw(printerAddress, receiptText,
+              qrImageBytes: qrImageBytes, bankInfoText: bankInfoText);
+        }
       }
       return 'Chưa hỗ trợ in trên nền tảng này.';
     } catch (e) {
@@ -35,35 +54,147 @@ class PrinterService {
     }
   }
 
-  static Future<String?> _printBluetooth(String address, String text, {Uint8List? qrImageBytes, String? bankInfoText}) async {
-    debugPrint('[Printer] Bluetooth print to $address:\n$text');
-    if (qrImageBytes != null) debugPrint('[Printer] QR image bytes: ${qrImageBytes.length}');
-    if (bankInfoText != null && bankInfoText.isNotEmpty) debugPrint('[Printer] Bank info:\n$bankInfoText');
+  /// In PDF laser — Windows dùng hệ thống in, Android dùng BLE/TCP.
+  static Future<String?> printLaserPdf({
+    required Store store,
+    required RepairOrder order,
+    String? staffName,
+    String? headerText,
+    String? footerText,
+    bool showTimestamp = true,
+    bool showTaxCode = true,
+    bool showBank = true,
+  }) async {
+    try {
+      final pdfBytes = await LaserReceiptBuilder.buildPdf(
+        store: store,
+        order: order,
+        staffName: staffName,
+        headerText: headerText,
+        footerText: footerText,
+        showTimestamp: showTimestamp,
+        showTaxCode: showTaxCode,
+        showBank: showBank,
+      );
+
+      final config = await PrinterConfigService.load();
+      if (config == null || config.address.isEmpty) {
+        return 'Chưa cấu hình máy in laser.';
+      }
+
+      // Windows: dùng hệ thống in
+      if (Platform.isWindows) {
+        await Printing.layoutPdf(
+          onLayout: (format) async => pdfBytes,
+          name: 'Phiếu ${order.code}',
+          usePrinterSettings: true,
+        );
+        return null;
+      }
+
+      // Android: gửi PDF qua BLE hoặc TCP
+      if (Platform.isAndroid) {
+        if (config.isTcp) {
+          return await _printLaserTcp(config.address, pdfBytes);
+        } else {
+          return await _printLaserBle(config.address, pdfBytes);
+        }
+      }
+
+      return 'Chưa hỗ trợ in laser trên nền tảng này.';
+    } catch (e) {
+      AppLogger.instance.warning('printLaserPdf error: $e', category: 'printer');
+      return 'Lỗi in PDF: $e';
+    }
+  }
+
+  /// In PDF laser qua TCP/IP (Android).
+  static Future<String?> _printLaserTcp(String address, List<int> pdfBytes) async {
+    final parts = address.split(':');
+    if (parts.length != 2) return 'Địa chỉ máy in không hợp lệ (cần IP:Port).';
+    try {
+      final socket = await Socket.connect(parts[0], int.parse(parts[1]),
+          timeout: const Duration(seconds: 10));
+      socket.add(pdfBytes);
+      await socket.flush();
+      await socket.close();
+      return null;
+    } catch (e) {
+      return 'Không thể kết nối máy in laser: $e';
+    }
+  }
+
+  /// In PDF laser qua BLE (Android).
+  static Future<String?> _printLaserBle(String deviceId, List<int> pdfBytes) async {
+    final connErr = await BluetoothPrinterService.reconnect(deviceId);
+    if (connErr != null) return connErr;
+
+    // Gửi PDF bytes theo chunks (BLE MTU limit)
+    const chunkSize = 180;
+    for (var i = 0; i < pdfBytes.length; i += chunkSize) {
+      final end = (i + chunkSize < pdfBytes.length) ? i + chunkSize : pdfBytes.length;
+      final chunk = pdfBytes.sublist(i, end);
+      final err = await BluetoothPrinterService.printData(Uint8List.fromList(chunk));
+      if (err != null) return err;
+    }
     return null;
   }
 
-  static Future<String?> _printTcp(String address, String text, {Uint8List? qrImageBytes, String? bankInfoText}) async {
+  /// In qua Bluetooth (Android) — máy in nhiệt.
+  static Future<String?> _printBluetooth(String address, String text,
+      {Uint8List? qrImageBytes, String? bankInfoText}) async {
+    // Kết nối lại nếu chưa kết nối
+    final connErr = await BluetoothPrinterService.reconnect(address);
+    if (connErr != null) return connErr;
+
+    // Gửi ESC/POS init
+    final initErr = await BluetoothPrinterService.printData(Uint8List.fromList(_escInit));
+    if (initErr != null) return initErr;
+
+    // Gửi text
+    final textBytes = Uint8List.fromList(utf8.encode(text));
+    final textErr = await BluetoothPrinterService.printData(textBytes);
+    if (textErr != null) return textErr;
+
+    // QR image
+    if (qrImageBytes != null) {
+      await BluetoothPrinterService.printData(Uint8List.fromList([0x0A]));
+      await BluetoothPrinterService.printData(Uint8List.fromList(_rasterImageCommands(qrImageBytes)));
+    }
+
+    // Bank info
+    if (bankInfoText != null && bankInfoText.isNotEmpty) {
+      await BluetoothPrinterService.printData(Uint8List.fromList([0x0A]));
+      await BluetoothPrinterService.printData(Uint8List.fromList(utf8.encode(bankInfoText)));
+    }
+
+    // Feed + cut
+    await BluetoothPrinterService.printData(Uint8List.fromList(_escLineFeed));
+    await BluetoothPrinterService.printData(Uint8List.fromList(_escLineFeed));
+    await BluetoothPrinterService.printData(Uint8List.fromList(_escCut));
+
+    return null;
+  }
+
+  /// In qua TCP/IP (Windows) — máy in nhiệt mạng.
+  static Future<String?> _printTcp(String address, String text,
+      {Uint8List? qrImageBytes, String? bankInfoText}) async {
     final parts = address.split(':');
     if (parts.length != 2) return 'Địa chỉ máy in không hợp lệ (cần IP:Port).';
     try {
       final socket = await Socket.connect(parts[0], int.parse(parts[1]),
           timeout: const Duration(seconds: 5));
-      // Init printer
       socket.add(Uint8List.fromList(_escInit));
-      // Print text with UTF-8 encoding
       final textBytes = utf8.encode(text);
       socket.add(Uint8List.fromList(textBytes));
-      // QR image (nếu có)
       if (qrImageBytes != null) {
         socket.add(Uint8List.fromList([0x0A]));
         socket.add(Uint8List.fromList(_rasterImageCommands(qrImageBytes)));
       }
-      // Thông tin chuyển khoản in ngay dưới mã QR
       if (bankInfoText != null && bankInfoText.isNotEmpty) {
         socket.add(Uint8List.fromList([0x0A]));
         socket.add(Uint8List.fromList(utf8.encode(bankInfoText)));
       }
-      // Feed + cut
       socket.add(Uint8List.fromList(_escLineFeed));
       socket.add(Uint8List.fromList(_escLineFeed));
       socket.add(Uint8List.fromList(_escCut));
@@ -73,6 +204,28 @@ class PrinterService {
     } catch (e) {
       return 'Không thể kết nối máy in: $e';
     }
+  }
+
+  /// In qua USB RAW (Windows) — máy in nhiệt USB chọn từ danh sách.
+  static Future<String?> _printUsbRaw(String printerName, String text,
+      {Uint8List? qrImageBytes, String? bankInfoText}) async {
+    // Build toàn bộ ESC/POS data thành 1 buffer
+    final buf = BytesBuilder();
+    buf.add(Uint8List.fromList(_escInit));
+    buf.add(Uint8List.fromList(utf8.encode(text)));
+    if (qrImageBytes != null) {
+      buf.add(Uint8List.fromList([0x0A]));
+      buf.add(Uint8List.fromList(_rasterImageCommands(qrImageBytes)));
+    }
+    if (bankInfoText != null && bankInfoText.isNotEmpty) {
+      buf.add(Uint8List.fromList([0x0A]));
+      buf.add(Uint8List.fromList(utf8.encode(bankInfoText)));
+    }
+    buf.add(Uint8List.fromList(_escLineFeed));
+    buf.add(Uint8List.fromList(_escLineFeed));
+    buf.add(Uint8List.fromList(_escCut));
+
+    return await WindowsPrinterService.printRaw(printerName, buf.toBytes());
   }
 
   /// Text thông tin chuyển khoản — in ngay dưới mã QR trên phiếu.
@@ -89,8 +242,6 @@ class PrinterService {
     return buf.toString();
   }
 
-  /// Lệnh ESC/POS in ảnh dạng raster (GS v 0 ...) — ảnh QR đã chọn từ máy
-  /// được chuyển thành bitmap 1-bit (trắng/đen) trước khi gửi.
   static List<int> _rasterImageCommands(Uint8List bytes) {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return [0x0A];
@@ -126,7 +277,11 @@ class PrinterService {
     return out;
   }
 
-  static Future<String?> testPrint({required String printerAddress}) async {
+  /// In test — gửi phiếu mẫu theo loại máy in hiện tại.
+  static Future<String?> testPrint({required String printerAddress, PrinterType printerType = PrinterType.thermal}) async {
+    if (printerType == PrinterType.laser) {
+      return 'Vui lòng dùng nút In mẫu PDF để kiểm tra máy in laser.';
+    }
     final testText = buildReceiptText(
       storeName: 'CỬA HÀNG SỬA CHỮA ĐIỆN THOẠI',
       storeAddress: 'Test in ấn',
@@ -143,10 +298,10 @@ class PrinterService {
       receivedAt: DateTime.now(),
       staffName: 'Admin',
     );
-    return await printReceipt(printerAddress: printerAddress, receiptText: testText);
+    return await printReceipt(printerAddress: printerAddress, receiptText: testText, printerType: printerType);
   }
 
-  /// Tạo nội dung hóa đơn dạng text (ESC/POS compatible)
+  /// Tạo nội dung hóa đơn dạng text (ESC/POS compatible) — máy in nhiệt.
   static String buildReceiptText({
     required String storeName,
     required String storeAddress,
@@ -174,30 +329,23 @@ class PrinterService {
     bool showBank = true,
   }) {
     final buf = StringBuffer();
-
     void line(String s) => buf.writeln(s);
     void dash() => buf.writeln('─' * _charsPerLine);
     void pair(String k, String v) => buf.writeln('$k: $v');
 
-    // -- Timestamp --
     if (showTimestamp) {
       final now = DateTime.now();
       final hh = now.hour.toString().padLeft(2, '0');
       final mm = now.minute.toString().padLeft(2, '0');
       line('Ngày in: ${_fmtDate(now)}  Giờ: $hh:$mm');
     }
-
-    // -- Header --
-    if (headerText != null && headerText.isNotEmpty) {
-      line(headerText);
-    }
+    if (headerText != null && headerText.isNotEmpty) line(headerText);
     line(storeName.toUpperCase());
     if (storeAddress.isNotEmpty) line(storeAddress);
     if (storePhone.isNotEmpty) line('Tel: $storePhone');
     if (showTaxCode && storeTaxCode != null && storeTaxCode.isNotEmpty) line('MST: $storeTaxCode');
     dash();
 
-    // -- Order info --
     line('PHIẾU SỬA CHỮA');
     pair('Mã phiếu', orderCode);
     pair('Ngày nhận', _fmtDate(receivedAt));
@@ -215,31 +363,25 @@ class PrinterService {
     pair('Trạng thái', _statusLabel(status));
     dash();
 
-    // -- Price --
     line('THANH TOÁN');
     pair('Tiền sửa', '${_fmtMoney(finalCost)}đ');
     pair('Hình thức', _paymentLabel(paymentMethod));
     dash();
 
-    // -- Warranty --
     if (warrantyDays > 0) {
       line('CHẾ ĐỘ BẢO HÀNH');
       line('$warrantyDays ngày (kể từ ngày trả máy)');
       dash();
     }
 
-    // -- Staff --
     if (staffName != null) pair('KTV', staffName);
 
-    // -- Footer --
     if (footerText != null && footerText.isNotEmpty) {
       dash();
       line(footerText);
     }
 
-    // Empty lines for paper cut
     buf.writeln('\n\n\n\n');
-
     return buf.toString();
   }
 

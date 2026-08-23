@@ -15,6 +15,7 @@ class RepairOrder {
   final String? technicianId;
   final String? repairedBy;
   final String? receivedBy;
+  final String? deliveredBy;
   final num estimatedCost;
   final num finalCost;
   final int warrantyDays;
@@ -44,6 +45,7 @@ class RepairOrder {
     this.technicianId,
     this.repairedBy,
     this.receivedBy,
+    this.deliveredBy,
     this.estimatedCost = 0,
     this.finalCost = 0,
     this.warrantyDays = 0,
@@ -77,6 +79,7 @@ class RepairOrder {
         technicianId: map['technician_id'] as String?,
         repairedBy: map['repaired_by'] as String?,
         receivedBy: map['received_by'] as String?,
+        deliveredBy: map['delivered_by'] as String?,
         estimatedCost: map['estimated_cost'] as num? ?? 0,
         finalCost: map['final_cost'] as num? ?? 0,
         warrantyDays: map['warranty_days'] as int? ?? 0,

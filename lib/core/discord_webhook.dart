@@ -53,15 +53,13 @@ class DiscordWebhook {
 
     await send(
       webhookUrl: url,
-      title: '\u{1F4CB} Phiếu mới: $orderCode',
+      title: '\u{1F4CB} Phiếu mới: $name | $orderCode',
       description: mention != null
-          ? '**$name** vừa tạo phiếu sửa chữa mới. $mention'
+          ? '$mention vừa tạo phiếu sửa chữa mới.'
           : '**$name** vừa tạo phiếu sửa chữa mới.',
       color: '5814783',
       fields: {
         'Mã phiếu': orderCode,
-        'Khách hàng': customerName,
-        'Cửa hàng': name,
         if (mention != null) 'KTV phụ trách': mention,
       },
     );
@@ -92,21 +90,71 @@ class DiscordWebhook {
 
     final fields = <String, String>{
       'Mã phiếu': orderCode,
-      'Cửa hàng': name,
       'Trạng thái cũ': statusLabels[oldStatus] ?? oldStatus,
       'Trạng thái mới': statusLabels[newStatus] ?? newStatus,
+      if (mention != null) 'KTV phụ trách': mention,
     };
-    if (customerName != null && customerName.isNotEmpty) fields['Khách hàng'] = customerName;
-    if (mention != null) fields['KTV phụ trách'] = mention;
 
     await send(
       webhookUrl: url,
-      title: '\u{1F504} Cập nhật trạng thái: $orderCode',
+      title: '\u{1F504} Cập nhật: $name | $orderCode',
       description: mention != null
-          ? '**$name** — đổi trạng thái phiếu sửa chữa. $mention'
+          ? '$mention đổi trạng thái phiếu sửa chữa.'
           : '**$name** — đổi trạng thái phiếu sửa chữa.',
       color: '16766720',
       fields: fields,
+    );
+  }
+
+  static Future<void> notifyOrderUpdated({
+    required String storeId,
+    required String orderCode,
+    String? customerName,
+    String? technicianId,
+    String? changes,
+  }) async {
+    final config = await _getStoreConfig(storeId);
+    if (config == null) return;
+    final (url, name) = config;
+    final mention = technicianId != null ? await _getDiscordMention(technicianId) : null;
+
+    final fields = <String, String>{
+      'Mã phiếu': orderCode,
+      if (mention != null) 'KTV phụ trách': mention,
+      if (changes != null && changes.isNotEmpty) 'Thay đổi': changes,
+    };
+
+    await send(
+      webhookUrl: url,
+      title: '\u{270F} Phiếu đã sửa: $name | $orderCode',
+      description: mention != null
+          ? '$mention vừa cập nhật phiếu sửa chữa.'
+          : '**$name** vừa cập nhật phiếu sửa chữa.',
+      color: '3447003',
+      fields: fields,
+    );
+  }
+
+  static Future<void> notifyOrderDeleted({
+    required String storeId,
+    required String orderCode,
+    required String deletedByName,
+    String? technicianId,
+  }) async {
+    final config = await _getStoreConfig(storeId);
+    if (config == null) return;
+    final (url, name) = config;
+    final mention = technicianId != null ? await _getDiscordMention(technicianId) : null;
+
+    await send(
+      webhookUrl: url,
+      title: '\u{1F5D1} Phiếu đã xóa: $name | $orderCode',
+      description: '**$deletedByName** vừa xóa phiếu sửa chữa **$orderCode** (chuyển vào thùng rác, lưu 90 ngày).',
+      color: '13434879',
+      fields: {
+        'Mã phiếu': orderCode,
+        if (mention != null) 'KTV phụ trách': mention,
+      },
     );
   }
 

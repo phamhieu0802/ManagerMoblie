@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../../core/supabase_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/repair_order.dart';
 
@@ -31,7 +32,7 @@ Future<void> showCompleteOrderDialog({
       title: Text('Đơn hoàn tất ${order.code}'),
       contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       content: SizedBox(
-        width: 560,
+        width: 510,
         child: SingleChildScrollView(
           child: _CompleteOrderCard(
             order: order,
@@ -81,6 +82,27 @@ class _CompleteOrderCardState extends State<_CompleteOrderCard> {
         _status,
         ...widget.allowedStatuses.where((s) => s != _status),
       ];
+
+  Future<Map<String, String>> _resolveNames() async {
+    final ids = <String>{
+      if (widget.order.receivedBy != null) widget.order.receivedBy!,
+      if (widget.order.technicianId != null) widget.order.technicianId!,
+      if (widget.order.deliveredBy != null) widget.order.deliveredBy!,
+    };
+    if (ids.isEmpty) return {};
+    try {
+      final rows = await SupabaseService.client
+          .from('profiles')
+          .select('id, full_name')
+          .inFilter('id', ids.toList());
+      return {
+        for (final r in rows)
+          r['id'] as String: (r['full_name'] as String? ?? '').trim(),
+      };
+    } catch (_) {
+      return {};
+    }
+  }
 
   String _paymentLabel() {
     switch (widget.order.paymentMethod) {
@@ -185,6 +207,60 @@ class _CompleteOrderCardState extends State<_CompleteOrderCard> {
           _infoRow('Thanh toán', _paymentLabel()),
         if ((order.note ?? '').isNotEmpty)
           _infoRow('Ghi chú', order.note!),
+        const SizedBox(height: 10),
+        FutureBuilder<Map<String, String>>(
+          future: _resolveNames(),
+          builder: (context, snap) {
+            final names = snap.data ?? {};
+            String _name(String? id) =>
+                (id == null || (names[id] ?? '').isEmpty) ? '—' : names[id]!;
+            final steps = <_JourneyStep>[
+              _JourneyStep(
+                icon: Icons.how_to_reg_rounded,
+                label: 'Tiếp nhận',
+                name: _name(order.receivedBy),
+                color: Colors.blue,
+              ),
+              if (order.technicianId != null)
+                _JourneyStep(
+                  icon: Icons.build_rounded,
+                  label: 'Sửa máy',
+                  name: _name(order.technicianId),
+                  color: Colors.orange,
+                ),
+              if (order.deliveredBy != null)
+                _JourneyStep(
+                  icon: Icons.assignment_return_rounded,
+                  label: 'Trả máy',
+                  name: _name(order.deliveredBy),
+                  color: Colors.green,
+                ),
+            ];
+            if (steps.isEmpty) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Hành trình máy',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (int i = 0; i < steps.length; i++) ...[
+                      Expanded(child: _JourneyStepWidget(step: steps[i])),
+                      if (i < steps.length - 1)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Icon(Icons.arrow_forward_ios_rounded, size: 10, color: Colors.grey[400]),
+                        ),
+                    ],
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -255,6 +331,55 @@ class _StatusDropdownButton extends StatelessWidget {
             Icon(Icons.arrow_drop_down, size: 16, color: color),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _JourneyStep {
+  final IconData icon;
+  final String label;
+  final String name;
+  final Color color;
+  const _JourneyStep({required this.icon, required this.label, required this.name, required this.color});
+}
+
+class _JourneyStepWidget extends StatelessWidget {
+  final _JourneyStep step;
+  const _JourneyStepWidget({required this.step});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: step.color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(step.icon, size: 14, color: step.color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  step.label,
+                  style: TextStyle(fontSize: 9, color: step.color, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  step.name,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

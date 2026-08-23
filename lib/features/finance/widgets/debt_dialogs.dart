@@ -1,6 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../core/supabase_service.dart';
+import '../../../core/app_toast.dart';
+import '../../../core/photo_upload.dart';
 import '../../../widgets/realtime_stream_view.dart';
 import '../../../widgets/money_input_field.dart';
 import '../../../widgets/dialog_action_row.dart';
@@ -39,27 +43,33 @@ Future<Map<String, dynamic>?> _ensureAccount(String storeId, String type) async 
   }
 }
 
-/// Hộp thoại thêm công nợ (khách nợ / nợ nhà cung cấp).
-/// [showTypeSelector] = false thì bỏ 2 nút phân loại (dùng khi đã biết loại,
-/// ví dụ màn Khách hàng & NCC gọi để thêm đúng loại nhà cung cấp).
-/// [showAmount] = false thì bỏ ô số tiền (thêm NCC chỉ nhập thông tin liên hệ;
-/// số tiền được nhập sau qua mục Công nợ / Phát sinh).
+/// Hộp thoại thêm / sửa công nợ (khách nợ / nợ nhà cung cấp).
+/// [existing] != null → chế độ sửa (prefill + update thay vì insert).
+/// [showTypeSelector] = false thì bỏ 2 nút phân loại.
+/// [showAmount] = false thì bỏ ô số tiền.
 Future<void> showAddDebtDialog(
   BuildContext context, {
   String initialType = 'customer',
   String title = 'Thêm công nợ',
   bool showTypeSelector = true,
   bool showAmount = true,
+  Map<String, dynamic>? existing,
 }) async {
-  final nameCtrl = TextEditingController();
-  final phoneCtrl = TextEditingController();
-  final addrCtrl = TextEditingController();
-  final noteCtrl = TextEditingController();
+  final isEdit = existing != null;
+  final nameCtrl = TextEditingController(text: existing?['contact_name'] ?? '');
+  final phoneCtrl = TextEditingController(text: existing?['contact_phone'] ?? '');
+  final addrCtrl = TextEditingController(text: existing?['contact_address'] ?? '');
+  final noteCtrl = TextEditingController(text: existing?['note'] ?? '');
   final amountCtrl = TextEditingController();
   String type = initialType;
   DateTime txDate = DateTime.now();
   bool saving = false;
   String? error;
+  Uint8List? qrBytes;
+  bool qrLoading = false;
+  // Nếu NCC đã có QR → hiện hint
+  final existingQrPath = existing?['contact_image'] as String?;
+  bool hasExistingQr = existingQrPath != null && existingQrPath.isNotEmpty;
 
   await showAdaptiveFormDialog(
     context: context,
@@ -83,6 +93,51 @@ Future<void> showAddDebtDialog(
         const SizedBox(height: 8),
         TextField(controller: addrCtrl, decoration: const InputDecoration(labelText: 'Địa chỉ')),
         const SizedBox(height: 8),
+        if (type == 'supplier') ...[
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  icon: qrLoading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.qr_code_2, size: 18),
+                  label: Text(qrBytes != null
+                      ? 'Đã chọn ảnh QR mới'
+                      : hasExistingQr
+                          ? 'Đã có ảnh QR (bấm để thay)'
+                          : 'QR ngân hàng (tuỳ chọn)'),
+                  onPressed: qrLoading ? null : () async {
+                    setStateDialog(() => qrLoading = true);
+                    try {
+                      final bytes = await captureAndResizePhoto();
+                      if (bytes != null) setStateDialog(() { qrBytes = bytes; hasExistingQr = false; });
+                    } on PhotoPermissionException catch (e) {
+                      if (ctx.mounted) showToast(ctx, e.message, error: true);
+                    } finally {
+                      setStateDialog(() => qrLoading = false);
+                    }
+                  },
+                ),
+              ),
+              if (qrBytes != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Xóa ảnh QR',
+                  icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                  onPressed: () => setStateDialog(() => qrBytes = null),
+                ),
+              ] else if (hasExistingQr) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Xóa ảnh QR hiện tại',
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                  onPressed: () => setStateDialog(() => hasExistingQr = false),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         if (showAmount) ...[
           MoneyInputField(controller: amountCtrl, label: 'Số tiền *'),
           const SizedBox(height: 8),
@@ -121,15 +176,55 @@ Future<void> showAddDebtDialog(
             if (user == null) throw Exception('Chua dang nhap');
             final storeId = (await SupabaseService.client.from('profiles')
                 .select('store_id').eq('id', user.id).single())['store_id'];
-            final debt = await SupabaseService.client.from('debts').insert({
-              'store_id': storeId, 'type': type, 'contact_name': nameCtrl.text.trim(),
+
+            final payload = <String, dynamic>{
+              'contact_name': nameCtrl.text.trim(),
               'contact_phone': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
               'contact_address': addrCtrl.text.trim().isEmpty ? null : addrCtrl.text.trim(),
-              'total_debt': showAmount ? amount : 0, 'note': noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-            }).select('id').single();
-            if (showAmount) {
+              'note': noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+            };
+
+            String debtId;
+            if (isEdit) {
+              // Chế độ sửa: cập nhật thông tin liên hệ
+              await SupabaseService.client.from('debts')
+                  .update(payload).eq('id', existing!['id']);
+              debtId = existing['id'] as String;
+            } else {
+              // Chế độ thêm mới
+              payload['store_id'] = storeId;
+              payload['type'] = type;
+              if (showAmount) payload['total_debt'] = amount;
+              final debt = await SupabaseService.client.from('debts')
+                  .insert(payload).select('id').single();
+              debtId = debt['id'] as String;
+            }
+
+            // Upload / xóa ảnh QR (chỉ NCC)
+            if (type == 'supplier') {
+              try {
+                if (qrBytes != null) {
+                  final qrPath = await uploadStoreFile(
+                    storeId: storeId,
+                    fileName: 'supplier-qr-$debtId.png',
+                    bytes: qrBytes!,
+                  );
+                  await SupabaseService.client.from('debts')
+                      .update({'contact_image': qrPath}).eq('id', debtId);
+                } else if (!hasExistingQr && !isEdit) {
+                  // Thêm mới mà không chọn QR → không làm gì
+                } else if (!hasExistingQr && isEdit) {
+                  // Sửa mà xóa QR → xóa path
+                  await SupabaseService.client.from('debts')
+                      .update({'contact_image': null}).eq('id', debtId);
+                }
+              } catch (_) {}
+            }
+
+            // Tạo phát sinh ban đầu (chỉ khi thêm mới + có số tiền)
+            if (showAmount && !isEdit) {
               await SupabaseService.client.from('debt_transactions').insert({
-                'store_id': storeId, 'debt_id': debt['id'], 'type': 'add',
+                'store_id': storeId, 'debt_id': debtId, 'type': 'add',
                 'amount': amount, 'description': 'Phát sinh ban đầu', 'created_by': user.id,
                 'transaction_date': txDate.toIso8601String(),
               });
@@ -459,8 +554,6 @@ class DebtDetailScreen extends StatelessWidget {
                     margin: const EdgeInsets.symmetric(vertical: 2),
                     child: ListTile(
                       dense: true,
-                      onTap: () => showEditDebtTxDialog(context, debt, t),
-                      trailing: const Icon(Icons.edit, size: 16),
                       leading: Icon(
                         isAdd ? Icons.add_circle_outline : Icons.remove_circle_outline,
                         color: isAdd ? Colors.red : Colors.green, size: 20,
@@ -480,5 +573,369 @@ class DebtDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Dialog danh sách hóa đơn liên kết với công nợ. Cho phép chọn 1 hoặc nhiều
+/// hóa đơn → thanh toán (Tiền mặt / C.Khoán).
+Future<void> showDebtOrdersPaymentDialog({
+  required BuildContext context,
+  required String contactName,
+  required num totalDebt,
+  required Color color,
+  required bool isCustomer,
+  required List<Map<String, dynamic>> orderItems,
+  required List<Map<String, dynamic>> debts,
+}) async {
+  final selected = <int>{};
+  bool selecting = false;
+  // Lấy contact_image từ debts (NCC có upload QR)
+  final contactImage = debts
+      .map((d) => (d['contact_image'] ?? '').toString())
+      .where((s) => s.isNotEmpty)
+      .firstOrNull;
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) {
+        final selectedTotal = selected.fold<num>(0, (s, i) => s + (orderItems[i]['cost'] as num? ?? 0));
+        final unpaidItems = orderItems.where((o) => !(o['paid'] as bool)).toList();
+        final allSelected = unpaidItems.isNotEmpty && selected.length == unpaidItems.length;
+
+        return AlertDialog(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(contactName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text('Tổng nợ: ${_currency.format(totalDebt)}', style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Nút chọn tất cả
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${selected.length}/${unpaidItems.length} đơn chưa thanh toán',
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: unpaidItems.isEmpty ? null : () {
+                        setDialogState(() {
+                          if (allSelected) {
+                            selected.clear();
+                          } else {
+                            for (var i = 0; i < orderItems.length; i++) {
+                              if (!(orderItems[i]['paid'] as bool)) selected.add(i);
+                            }
+                          }
+                        });
+                      },
+                      icon: Icon(allSelected ? Icons.deselect : Icons.select_all, size: 16),
+                      label: Text(allSelected ? 'Bỏ chọn' : 'Chọn tất cả', style: const TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const Divider(height: 1),
+                // Danh sách đơn
+                Flexible(
+                  child: orderItems.isEmpty
+                      ? const Center(child: Text('Không có hóa đơn liên kết.', style: TextStyle(fontSize: 12, color: Colors.black45)))
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: orderItems.length,
+                          itemBuilder: (_, i) {
+                            final item = orderItems[i];
+                            final isPaid = item['paid'] as bool;
+                            final isSel = selected.contains(i);
+                            return CheckboxListTile(
+                              value: isSel,
+                              onChanged: isPaid ? null : (v) {
+                                setDialogState(() {
+                                  if (v == true) {
+                                    selected.add(i);
+                                  } else {
+                                    selected.remove(i);
+                                  }
+                                });
+                              },
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                '${item['code']}  ${item['device_model'] ?? ''}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: isPaid ? TextDecoration.lineThrough : null,
+                                  color: isPaid ? Colors.black38 : null,
+                                ),
+                              ),
+                              subtitle: Text(
+                                _currency.format(item['cost']),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isPaid ? Colors.black38 : color,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              secondary: isPaid
+                                  ? const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                                  : null,
+                            );
+                          },
+                        ),
+                ),
+                // Tổng tiền chọn
+                if (selected.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Thanh toán:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        Text(_currency.format(selectedTotal), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: color)),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Hủy'),
+            ),
+            if (!isCustomer && contactImage != null)
+              OutlinedButton.icon(
+                onPressed: () => _showSupplierQrDialog(context, contactName, contactImage),
+                icon: const Icon(Icons.qr_code_2, size: 16),
+                label: const Text('Xem QR'),
+              ),
+            if (selected.isNotEmpty)
+              FilledButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  // Chọn hình thức thanh toán
+                  final method = await _askPaymentMethod(context);
+                  if (method != null) {
+                    await _paySelectedOrders(
+                      context: context,
+                      debts: debts,
+                      orderItems: orderItems,
+                      selectedIndices: selected,
+                      paymentMethod: method,
+                      isCustomer: isCustomer,
+                      contactName: contactName,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.payments, size: 16),
+                label: const Text('Thanh toán'),
+              ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+/// Hỏi hình thức thanh toán.
+Future<String?> _askPaymentMethod(BuildContext context) {
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Hình thức thanh toán'),
+      content: const Text('Thanh toán bằng?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, 'cash'), child: const Text('Tiền mặt')),
+        TextButton(onPressed: () => Navigator.pop(ctx, 'transfer'), child: const Text('Chuyển khoản')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+      ],
+    ),
+  );
+}
+
+/// Hiển thị ảnh QR thanh toán của nhà cung cấp (fullscreen dialog).
+void _showSupplierQrDialog(BuildContext context, String contactName, String qrPath) {
+  showDialog(
+    context: context,
+    builder: (ctx) => Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
+              child: Row(
+                children: [
+                  const Icon(Icons.qr_code_2, color: Colors.blue, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('QR - $contactName',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: FutureBuilder<String?>(
+                future: getRepairPhotoUrl(qrPath),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox(
+                      height: 250,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final url = snapshot.data;
+                  if (url == null || url.isEmpty) {
+                    return const SizedBox(
+                      height: 250,
+                      child: Center(child: Text('Không tải được ảnh QR', style: TextStyle(color: Colors.black45))),
+                    );
+                  }
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      height: 300,
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                        height: 250,
+                        child: Center(child: Text('Lỗi hiển thị ảnh QR', style: TextStyle(color: Colors.black45))),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonal(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Đóng'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Xử lý thanh toán các đơn đã chọn.
+Future<void> _paySelectedOrders({
+  required BuildContext context,
+  required List<Map<String, dynamic>> debts,
+  required List<Map<String, dynamic>> orderItems,
+  required Set<int> selectedIndices,
+  required String paymentMethod,
+  required bool isCustomer,
+  required String contactName,
+}) async {
+  try {
+    final user = SupabaseService.currentUser;
+    if (user == null) return;
+
+    final storeId = (await SupabaseService.client
+        .from('profiles')
+        .select('store_id')
+        .eq('id', user.id)
+        .single())['store_id'] as String;
+
+    final now = DateTime.now().toIso8601String();
+    num totalPaid = 0;
+    final paidOrderCodes = <String>[];
+
+    for (final idx in selectedIndices) {
+      final item = orderItems[idx];
+      if (item['paid'] as bool) continue;
+
+      final orderId = item['repair_order_id'] as String;
+      final cost = item['cost'] as num;
+      final code = item['code'] as String;
+      final debtTxId = item['debt_tx_id'] as String?;
+
+      // 1. Cập nhật đơn hàng: payment_method + paid_at
+      await SupabaseService.client.from('repair_orders').update({
+        'payment_method': paymentMethod,
+        'paid_at': now,
+      }).eq('id', orderId);
+
+      // 2. Tạo phiếu thu/chi (transactions)
+      final acctType = paymentMethod == 'transfer' ? 'bank' : 'cash';
+      final acct = await _ensureAccount(storeId, acctType);
+      await SupabaseService.client.from('transactions').insert({
+        'store_id': storeId,
+        'type': isCustomer ? 'income' : 'expense',
+        'category': isCustomer ? 'Sửa chữa' : 'Linh kiện',
+        'amount': cost,
+        'description': '$code - $contactName',
+        'created_by': user.id,
+        if (acct != null) 'account_id': acct['id'],
+        'transaction_date': now,
+      });
+      if (acct != null) {
+        await SupabaseService.client.from('cash_accounts').update({
+          'balance': ((acct['balance'] as num?) ?? 0) + (isCustomer ? cost : -cost),
+        }).eq('id', acct['id']);
+      }
+
+      // 3. Cập nhật hoặc tạo debt_transactions + 4. Cập nhật debts.total_debt
+      final debtEntry = debts.isNotEmpty ? debts.first : null;
+      if (debtEntry != null) {
+        if (debtTxId != null) {
+          await SupabaseService.client.from('debt_transactions').update({
+            'type': 'pay',
+            'description': 'Thanh toán $code (${paymentMethod == 'cash' ? 'Tiền mặt' : 'C.Khoản'})',
+          }).eq('id', debtTxId);
+        } else {
+          await SupabaseService.client.from('debt_transactions').insert({
+            'store_id': storeId,
+            'debt_id': debtEntry['id'],
+            'type': 'pay',
+            'amount': cost,
+            'description': 'Thanh toán $code (${paymentMethod == 'cash' ? 'Tiền mặt' : 'C.Khoản'})',
+            'repair_order_id': orderId,
+            'created_by': user.id,
+            'transaction_date': now,
+          });
+        }
+        final currentDebtTotal = (debtEntry['total_debt'] as num?) ?? 0;
+        final newTotal = currentDebtTotal - cost;
+        await SupabaseService.client.from('debts').update({
+          'total_debt': newTotal < 0 ? 0 : newTotal,
+        }).eq('id', debtEntry['id']);
+      }
+
+      totalPaid += cost;
+      paidOrderCodes.add(code);
+    }
+
+    if (context.mounted) {
+      showToast(context, 'Đã thanh toán ${paidOrderCodes.length} đơn: ${_currency.format(totalPaid)}');
+    }
+  } catch (e) {
+    if (context.mounted) {
+      showToast(context, 'Lỗi thanh toán: $e', error: true);
+    }
   }
 }

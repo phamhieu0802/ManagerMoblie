@@ -4,6 +4,7 @@ import '../../../core/app_toast.dart';
 import '../../../core/error_utils.dart';
 import '../../../core/permissions.dart';
 import '../../../core/printer_service.dart';
+import '../../../core/printer_config_service.dart';
 import '../../../core/photo_upload.dart';
 import '../../../models/profile.dart';
 import '../../../models/store.dart';
@@ -15,7 +16,9 @@ import '../../../widgets/dialog_action_row.dart';
 import '../controllers/settings_controller.dart';
 import 'app_info_screen.dart';
 import 'backup_screen.dart';
+import 'discord_settings_screen.dart';
 import 'log_screen.dart';
+import 'printer_settings_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -42,15 +45,14 @@ class SettingsScreen extends ConsumerWidget {
               _BankSettingsTile(storeId: profile.storeId!, ref: ref),
             if (perms?.can(AppFeature.printerSettings) ?? false)
               _PrinterSettingsTile(storeId: profile.storeId!, ref: ref),
-            if (perms?.can(AppFeature.discordWebhook) ?? false)
-              _DiscordWebhookTile(storeId: profile.storeId!, ref: ref),
             _BackupTile(storeId: profile.storeId!),
             if (perms?.can(AppFeature.appLogs) ?? false)
               const _LogTile(),
             const Divider(),
           ],
 
-          _DiscordLinkTile(profile: profile, ref: ref),
+          if (profile?.storeId != null)
+            _DiscordSettingsTile(storeId: profile!.storeId!, profile: profile, ref: ref),
 
           const Divider(),
 
@@ -432,432 +434,53 @@ class _PrinterSettingsTile extends ConsumerWidget {
       error: (e, _) => const ListTile(leading: Icon(Icons.print_outlined), title: Text('Máy in')),
       data: (store) {
         if (store == null) return const SizedBox.shrink();
-        final hasPrinter = store.printerAddress != null && store.printerAddress!.isNotEmpty;
-        return ListTile(
-          leading: const Icon(Icons.print_outlined),
-          title: const Text('Máy in nhiệt'),
-          subtitle: Text(hasPrinter ? 'Đã kết nối: ${store.printerAddress}' : 'Chưa cấu hình', maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showPrinterSettings(context, ref, store),
+        return FutureBuilder<PrinterConfig?>(
+          future: PrinterConfigService.load(),
+          builder: (ctx, snap) {
+            final config = snap.data;
+            final hasConfig = config != null && config.address.isNotEmpty;
+            final typeLabel = config?.type == PrinterType.laser ? 'Máy in laser' : 'Máy in nhiệt';
+            return ListTile(
+              leading: Icon(config?.type == PrinterType.laser ? Icons.print : Icons.print),
+              title: const Text('Máy in'),
+              subtitle: Text(
+                hasConfig ? '$typeLabel: ${config!.name ?? config.address}' : 'Chưa cấu hình',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PrinterSettingsScreen(store: store),
+              )).then((_) {
+                // Reload tile khi quay lại
+                if (context.mounted) ref.invalidate(storeDetailProvider(storeId));
+              }),
+            );
+          },
         );
       },
     );
   }
-
-  static void _showPrinterSettings(BuildContext context, WidgetRef ref, Store store) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => _PrinterSettingsPage(store: store, ref: ref)));
-  }
 }
 
-class _PrinterSettingsPage extends StatefulWidget {
-  final Store store;
+// ──────────────────────────────────────────────
+// Discord settings (ghép webhook + link)
+// ──────────────────────────────────────────────
+class _DiscordSettingsTile extends StatelessWidget {
+  final String storeId;
+  final Profile? profile;
   final WidgetRef ref;
-  const _PrinterSettingsPage({required this.store, required this.ref});
-
-  @override
-  State<_PrinterSettingsPage> createState() => _PrinterSettingsPageState();
-}
-
-class _PrinterSettingsPageState extends State<_PrinterSettingsPage> {
-  late final TextEditingController _addrCtrl;
-  late final TextEditingController _headerCtrl;
-  late final TextEditingController _footerCtrl;
-  late bool _showTimestamp;
-  late bool _showTaxCode;
-  late bool _showBank;
-  String? _testResult;
-
-  @override
-  void initState() {
-    super.initState();
-    _addrCtrl = TextEditingController(text: widget.store.printerAddress ?? '');
-    _headerCtrl = TextEditingController(text: widget.store.printHeader ?? '');
-    _footerCtrl = TextEditingController(text: widget.store.printFooter ?? '');
-    _showTimestamp = widget.store.printShowTimestamp;
-    _showTaxCode = widget.store.printShowTaxCode;
-    _showBank = widget.store.printShowBank;
-  }
-
-  @override
-  void dispose() {
-    _addrCtrl.dispose();
-    _headerCtrl.dispose();
-    _footerCtrl.dispose();
-    super.dispose();
-  }
-
-  void _showPreview() {
-    final s = widget.store;
-    final preview = PrinterService.buildReceiptText(
-      storeName: s.name,
-      storeAddress: s.address ?? '',
-      storePhone: s.phone ?? '',
-      storeTaxCode: s.taxCode,
-      bankName: s.bankName,
-      bankAccount: s.bankAccount,
-      bankBranch: s.bankBranch,
-      orderCode: 'HD-0001',
-      customerName: 'Nguyễn Văn A',
-      customerPhone: '0901234567',
-      deviceModel: 'iPhone 13',
-      imei: '123456789012345',
-      issueDescription: 'Thay màn hình cảm ứng',
-      status: 'delivered',
-      finalCost: 450000,
-      paymentMethod: 'cash',
-      receivedAt: DateTime.now(),
-      warrantyDays: 90,
-      headerText: _headerCtrl.text.trim().isEmpty ? null : _headerCtrl.text.trim(),
-      footerText: _footerCtrl.text.trim().isEmpty ? null : _footerCtrl.text.trim(),
-      staffName: 'Admin',
-      showTimestamp: _showTimestamp,
-      showTaxCode: _showTaxCode,
-      showBank: _showBank,
-    );
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Xem trước mẫu in'),
-        content: SizedBox(
-          width: 380,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SelectableText(
-                  preview,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.3),
-                ),
-                if (_showBank && s.bankQr != null && s.bankQr!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  FutureBuilder<String?>(
-                    future: getRepairPhotoUrl(s.bankQr!),
-                    builder: (ctx, snap) {
-                      final url = snap.data;
-                      if (url == null) return const SizedBox.shrink();
-                      return Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          color: Colors.white,
-                          child: Image.network(url, width: 130, height: 130, fit: BoxFit.contain),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-                if (_showBank && s.bankName != null && s.bankName!.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    PrinterService.buildBankInfoText(
-                      bankName: s.bankName!,
-                      bankAccount: s.bankAccount,
-                      bankBranch: s.bankBranch,
-                    ),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.3),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
-        ],
-      ),
-    );
-  }
+  const _DiscordSettingsTile({required this.storeId, required this.profile, required this.ref});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Cấu hình máy in')),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-          const Text('Nội dung phiếu in:', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _headerCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Lời chào (đầu phiếu)',
-              helperText: 'VD: Cảm ơn quý khách đã tin tưởng!',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _footerCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Lời nhắc (cuối phiếu)',
-              helperText: 'VD: Bảo hành 90 ngày. Vui lòng giữ lại phiếu!',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 16),
-          const Text('Tùy chọn hiển thị trên phiếu in:', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Ngày & giờ in (hàng trên cùng)'),
-            value: _showTimestamp,
-            onChanged: (v) => setState(() => _showTimestamp = v ?? true),
-          ),
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Mã số thuế (MST)'),
-            value: _showTaxCode,
-            onChanged: (v) => setState(() => _showTaxCode = v ?? true),
-          ),
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: const Text('Tài khoản ngân hàng (STK)'),
-            value: _showBank,
-            onChanged: (v) => setState(() => _showBank = v ?? true),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.visibility_outlined),
-              label: const Text('Xem mẫu'),
-              onPressed: _showPreview,
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text('Cấu hình máy in:', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _addrCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Địa chỉ máy in',
-              helperText: 'Android: BLE MAC (XX:XX:XX:XX:XX:XX) · Windows: IP:Port (192.168.1.100:9100)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Lưu'),
-                  onPressed: () async {
-                    await SettingsController.updateStore(
-                      storeId: widget.store.id,
-                      printerAddress: _addrCtrl.text.trim().isEmpty ? null : _addrCtrl.text.trim(),
-                      printHeader: _headerCtrl.text.trim().isEmpty ? null : _headerCtrl.text.trim(),
-                      printFooter: _footerCtrl.text.trim().isEmpty ? null : _footerCtrl.text.trim(),
-                      printShowTimestamp: _showTimestamp,
-                      printShowTaxCode: _showTaxCode,
-                      printShowBank: _showBank,
-                    );
-                    widget.ref.invalidate(storeDetailProvider(widget.store.id));
-                    if (mounted) showToast(context, 'Đã lưu cấu hình máy in.');
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  icon: const Icon(Icons.play_arrow_outlined),
-                  label: const Text('Kiểm tra'),
-                  onPressed: () async {
-                    final addr = _addrCtrl.text.trim();
-                    if (addr.isEmpty) { setState(() => _testResult = 'Nhập địa chỉ máy in trước.'); return; }
-                    setState(() => _testResult = 'Đang kết nối...');
-                    final err = await PrinterService.testPrint(printerAddress: addr);
-                    setState(() => _testResult = err ?? 'In thành công!');
-                  },
-                ),
-              ),
-            ],
-          ),
-          if (_testResult != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(_testResult!.contains('thành công') ? Icons.check_circle : Icons.error, color: _testResult!.contains('thành công') ? Colors.green : Colors.orange),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_testResult!, maxLines: 2, overflow: TextOverflow.ellipsis)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          const Text('Hướng dẫn kết nối:', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          const Text('• Android: Bật Bluetooth → Kết nối máy in trong Settings → Nhập địa chỉ MAC vào ô trên.\n'
-              '• Windows: Cắm máy in qua USB hoặc dùng share TCP (máy in hỗ trợ mạng) → Nhập IP:Port.\n'
-              '• Dùng nút Kiểm tra để xác nhận kết nối hoạt động.'),
-        ],
-        ),
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────
-// Discord webhook
-// ──────────────────────────────────────────────
-class _DiscordWebhookTile extends ConsumerWidget {
-  final String storeId;
-  final WidgetRef ref;
-  const _DiscordWebhookTile({required this.storeId, required this.ref});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storeAsync = ref.watch(storeDetailProvider(storeId));
-    return storeAsync.when(
-      loading: () => const ListTile(leading: Icon(Icons.discord), title: Text('Discord Webhook')),
-      error: (e, _) => const ListTile(leading: Icon(Icons.discord), title: Text('Discord Webhook')),
-      data: (store) {
-        if (store == null) return const SizedBox.shrink();
-        final hasWebhook = store.discordWebhookUrl != null && store.discordWebhookUrl!.isNotEmpty;
-        return ListTile(
-          leading: const Icon(Icons.discord),
-          title: const Text('Thông báo Discord'),
-          subtitle: Text(hasWebhook ? 'Đã kết nối webhook' : 'Chưa thiết lập'),
-          trailing: const Icon(Icons.edit_outlined, size: 20),
-          onTap: () => _showDiscordWebhookDialog(context, ref, store),
-        );
-      },
-    );
-  }
-
-  static Future<void> _showDiscordWebhookDialog(BuildContext context, WidgetRef ref, Store store) async {
-    final urlCtrl = TextEditingController(text: store.discordWebhookUrl ?? '');
-    bool saving = false;
-    String? error;
-
-    await showAdaptiveFormDialog(
-      context: context,
-      title: 'Discord Webhook',
-      contentBuilder: (ctx, setStateDialog) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: urlCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Webhook URL',
-              helperText: 'Tạo trong Discord Server Settings → Integrations → Webhooks',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 8),
-          Text('Khi thiết lập webhook, hệ thống sẽ tự động gửi thông báo đến kênh Discord khi:\n'
-              '• Tạo phiếu sửa chữa mới\n• Thay đổi trạng thái phiếu\n', style: Theme.of(context).textTheme.bodySmall),
-          if (error != null) ...[const SizedBox(height: 8), Text(error!, style: const TextStyle(color: Colors.red))],
-        ],
-      ),
-      actionsBuilder: (ctx, setStateDialog) => DialogActionRow(
-        onCancel: saving ? null : () => Navigator.pop(ctx),
-        isDirty: () => urlCtrl.text != (store.discordWebhookUrl ?? ''),
-        primaryButton: ElevatedButton(
-          onPressed: saving ? null : () async {
-            final url = urlCtrl.text.trim();
-            if (url.isNotEmpty && !url.startsWith('https://discord.com/api/webhooks/')) {
-              setStateDialog(() => error = 'URL webhook không hợp lệ.');
-              return;
-            }
-            setStateDialog(() { saving = true; error = null; });
-            try {
-              await SettingsController.updateStore(
-                storeId: store.id,
-                discordWebhookUrl: url.isEmpty ? null : url,
-              );
-              ref.invalidate(storeDetailProvider(store.id));
-              if (ctx.mounted) Navigator.pop(ctx);
-            } catch (e) { setStateDialog(() { saving = false; error = 'Lỗi: ${friendlyError(e)}'; }); }
-          },
-          child: saving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1D4ED8)))
-              : const Text('Lưu'),
-        ),
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────
-// Discord ID link (cá nhân)
-// ──────────────────────────────────────────────
-class _DiscordLinkTile extends ConsumerWidget {
-  final Profile? profile;
-  final WidgetRef ref;
-  const _DiscordLinkTile({required this.profile, required this.ref});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (profile == null) return const SizedBox.shrink();
     return ListTile(
       leading: const Icon(Icons.discord),
-      title: const Text('Liên kết Discord'),
-      subtitle: Text(profile!.discordId != null && profile!.discordId!.isNotEmpty
-          ? 'ID: ${profile!.discordId}'
-          : 'Chưa liên kết', maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.edit_outlined, size: 20),
-      onTap: () => _showDiscordLinkDialog(context, ref, profile!),
-    );
-  }
-
-  static Future<void> _showDiscordLinkDialog(BuildContext context, WidgetRef ref, Profile profile) async {
-    final ctrl = TextEditingController(text: profile.discordId ?? '');
-    bool saving = false;
-
-    await showAdaptiveFormDialog(
-      context: context,
-      title: 'Liên kết Discord',
-      contentBuilder: (ctx, setStateDialog) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(
-              labelText: 'Discord User ID',
-              helperText: 'Nhấp chuột phải vào tên → Copy ID (cần bật Developer Mode trong Discord)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text('Việc liên kết Discord ID giúp hệ thống có thể tag bạn trong thông báo (tính năng sắp ra mắt).',
-              style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-      actionsBuilder: (ctx, setStateDialog) => DialogActionRow(
-        onCancel: saving ? null : () => Navigator.pop(ctx),
-        isDirty: () => ctrl.text != (profile.discordId ?? ''),
-        primaryButton: ElevatedButton(
-          onPressed: saving ? null : () async {
-            setStateDialog(() { saving = true; });
-            try {
-              await SettingsController.updateProfile(
-                userId: profile.id,
-                discordId: ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
-              );
-              ref.invalidate(currentProfileProvider);
-              if (ctx.mounted) Navigator.pop(ctx);
-            } catch (_) { setStateDialog(() { saving = false; }); }
-          },
-          child: saving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1D4ED8)))
-              : const Text('Lưu'),
-        ),
+      title: const Text('Cài đặt Discord'),
+      subtitle: const Text('Webhook & liên kết tài khoản'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const DiscordSettingsScreen()),
       ),
     );
   }

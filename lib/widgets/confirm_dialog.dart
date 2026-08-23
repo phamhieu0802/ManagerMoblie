@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Hộp thoại xác nhận dùng chung cho toàn app (xác nhận xoá, đăng xuất, huỷ
 /// thay đổi...). Thiết kế đồng nhất với DialogActionRow: nút Hủy nền đỏ
@@ -35,7 +36,12 @@ Future<bool> showConfirmDialog({
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) {
-      Widget dlg = AlertDialog(
+      Widget dlg = CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter): () => safePop(ctx, true),
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () => safePop(ctx, true),
+        },
+        child: AlertDialog(
         titlePadding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
         contentPadding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -96,6 +102,7 @@ Future<bool> showConfirmDialog({
             ],
           ),
         ],
+      ),
       );
       if (width != null) dlg = SizedBox(width: width, child: dlg);
       return dlg;

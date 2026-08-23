@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/app_toast.dart';
 import '../controllers/auth_controller.dart';
 
@@ -110,7 +111,16 @@ class _StoreLoginScreenState extends State<StoreLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Đăng nhập Cửa hàng')),
-      body: SafeArea(
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter): () {
+            if (!_loading) _runEmailAction(() => AuthController.signInStoreWithEmail(_emailCtrl.text.trim(), _passCtrl.text));
+          },
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+            if (!_loading) _runEmailAction(() => AuthController.signInStoreWithEmail(_emailCtrl.text.trim(), _passCtrl.text));
+          },
+        },
+        child: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
@@ -198,6 +208,7 @@ class _StoreLoginScreenState extends State<StoreLoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

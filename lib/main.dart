@@ -12,9 +12,12 @@ import 'core/firebase_service.dart';
 import 'core/app_logger.dart';
 import 'core/theme/app_theme.dart';
 import 'core/windows_protocol.dart';
+import 'core/version.dart';
+import 'core/update_service.dart';
 import 'routing/app_router.dart';
 import 'features/auth/controllers/auth_controller.dart';
 import 'features/settings/controllers/backup_controller.dart';
+import 'features/settings/widgets/update_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -120,19 +123,29 @@ class _RepairShopAppState extends ConsumerState<RepairShopApp> with WidgetsBindi
       (_) => SupabaseService.ensureFreshSession(),
     );
 
-    // Duy trì kết nối Realtime định kỳ. KHÔNG tự disconnect()+connect() mỗi
-    // 2 phút như trước: việc đó khiến toàn bộ channel subscribe lại cùng lúc,
-    // gây RealtimeSubscribeException(status: timedOut) hàng loạt và làm mất
-    // kết nối trên màn hình đang mở. Chỉ reconnect khi socket thực sự rớt,
-    // còn sống thì chỉ đẩy token mới để giữ phiên. Realtime tự có heartbeat +
-    // reconnect backoff nên không cần ngắt kết nối thủ công.
+    // Duy trì kết nối Realtime định kỳ.
     _realtimeHealthTimer = Timer.periodic(_realtimeHealthInterval, (_) {
       SupabaseService.reconnectRealtimeIfNeeded();
     });
 
-    // Tự động sao lưu lên đám mây: kiểm tra định kỳ + 1 lần ngay sau khi mở app.
+    // Tự động sao lưu lên đám mây
     _autoBackupTimer = Timer.periodic(_autoBackupCheckInterval, (_) => _maybeAutoBackup());
     Timer(const Duration(seconds: 10), _maybeAutoBackup);
+
+    // Kiểm tra bản cập nhật (chỉ Windows, sau 5 giây để app load xong).
+    if (!kIsWeb && Platform.isWindows) {
+      Timer(const Duration(seconds: 5), _checkForUpdate);
+    }
+  }
+
+  /// Kiểm tra bản cập nhật từ GitHub Releases. Fire-and-forget.
+  Future<void> _checkForUpdate() async {
+    try {
+      final update = await UpdateService.checkForUpdate();
+      if (update != null && mounted) {
+        showUpdateDialog(context, update);
+      }
+    } catch (_) {}
   }
 
   /// Nếu cửa hàng bật "tự động sao lưu" và đã qua 24h kể từ lần sao lưu cuối

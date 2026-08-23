@@ -145,3 +145,30 @@ Future<T?> showAdaptiveFormDialog<T>({
   dialogFuture.whenComplete(() => _adaptiveDialogDepth--);
   return dialogFuture;
 }
+
+/// Bọc `showDialog` với debounce + depth guard giống [showAdaptiveFormDialog]
+/// để tránh mở nhiều dialog thô chồng lên nhau. Dùng cho mọi `showDialog`
+/// không đi qua `showAdaptiveFormDialog`.
+Future<T?> showDialogGuarded<T>(
+  BuildContext context, {
+  required Widget Function(BuildContext) builder,
+  bool barrierDismissible = true,
+}) {
+  final now = DateTime.now();
+  final prev = _lastAdaptiveDialogOpenedAt;
+  if (prev != null && now.difference(prev) < const Duration(milliseconds: 350)) {
+    return Future.value(null);
+  }
+  if (_adaptiveDialogDepth > 0) {
+    return Future.value(null);
+  }
+  _lastAdaptiveDialogOpenedAt = now;
+  _adaptiveDialogDepth++;
+  final future = showDialog<T>(
+    context: context,
+    barrierDismissible: barrierDismissible,
+    builder: builder,
+  );
+  future.whenComplete(() => _adaptiveDialogDepth--);
+  return future;
+}

@@ -471,51 +471,56 @@ class _SummaryListSection extends StatelessWidget {
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
         const SizedBox(height: 8),
-        for (int i = 0; i < rows.length; i++)
-          _SummaryListTile(row: rows[i], isLast: false, isDaily: isDaily),
-
-        // ---- Tổng cộng ----
         if (rows.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              border: Border(top: BorderSide(color: Colors.grey.shade300)),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 140, child: Text('Tổng cộng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
-                  SizedBox(
-                    width: 100,
-                    child: Text(
-                      totalIncome > 0 ? _currency.format(totalIncome) : '—',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
-                    ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (int i = 0; i < rows.length; i++)
+                  _SummaryListTile(row: rows[i], isLast: false, isDaily: isDaily),
+
+                // ---- Tổng cộng ----
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border(top: BorderSide(color: Colors.grey.shade300)),
                   ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 100,
-                    child: Text(
-                      totalExpense > 0 ? _currency.format(totalExpense) : '—',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C)),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 140, child: Text('Tổng cộng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
+                      SizedBox(
+                        width: 100,
+                        child: Text(
+                          totalIncome > 0 ? _currency.format(totalIncome) : '—',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF)),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      SizedBox(
+                        width: 100,
+                        child: Text(
+                          totalExpense > 0 ? _currency.format(totalExpense) : '—',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C)),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      SizedBox(
+                        width: 100,
+                        child: Text(
+                          _currency.format(totalProfit),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: totalProfit >= 0 ? const Color(0xFF16A34A) : const Color(0xFFF97316)),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 100,
-                    child: Text(
-                      _currency.format(totalProfit),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: totalProfit >= 0 ? const Color(0xFF16A34A) : const Color(0xFFF97316)),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 
@@ -554,49 +559,46 @@ class _SummaryListTile extends StatelessWidget {
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : Colors.grey.shade200)),
         ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 140,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(row.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDaily ? const Color(0xFF1D4ED8) : Colors.black87)),
-                    if (parts.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(parts.join(', '), style: const TextStyle(fontSize: 11, color: Colors.black45)),
-                      ),
-                  ],
-                ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 140,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(row.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDaily ? const Color(0xFF1D4ED8) : Colors.black87)),
+                  if (parts.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(parts.join(', '), style: const TextStyle(fontSize: 11, color: Colors.black45)),
+                    ),
+                ],
               ),
-              SizedBox(
-                width: 100,
-                child: row.income > 0
-                    ? Text(_currency.format(row.income), textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF)))
-                    : const Text('—', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: Colors.black38)),
+            ),
+            SizedBox(
+              width: 100,
+              child: row.income > 0
+                  ? Text(_currency.format(row.income), textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF)))
+                  : const Text('—', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: Colors.black38)),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 100,
+              child: row.expense > 0
+                  ? Text(_currency.format(row.expense), textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C)))
+                  : const Text('—', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: Colors.black38)),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 100,
+              child: Text(
+                _currency.format(profit),
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: profit >= 0 ? const Color(0xFF16A34A) : const Color(0xFFF97316)),
               ),
-              const SizedBox(width: 16),
-              SizedBox(
-                width: 100,
-                child: row.expense > 0
-                    ? Text(_currency.format(row.expense), textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C)))
-                    : const Text('—', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: Colors.black38)),
-              ),
-              const SizedBox(width: 16),
-              SizedBox(
-                width: 100,
-                child: Text(
-                  _currency.format(profit),
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: profit >= 0 ? const Color(0xFF16A34A) : const Color(0xFFF97316)),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

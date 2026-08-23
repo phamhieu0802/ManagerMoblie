@@ -33,14 +33,17 @@ class SupabaseService {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final needsRefresh = expiresAt == null || nowSeconds >= (expiresAt - 300);
       if (needsRefresh) {
-        await auth.refreshSession();
+        try {
+          await auth.refreshSession();
+        } catch (e) {
+          AppLogger.instance.warning(
+            'JWT refresh thất bại (có thể refresh_token hết hạn): $e',
+            category: 'auth',
+          );
+        }
       }
-      // setAuth đẩy token mới lên socket đang mở (không ngắt kết nối) và cập
-      // nhật accessToken để các lần reconnect sau dùng token mới nhất.
       await refreshRealtimeAuth();
-    } catch (_) {
-      // AuthController.listenAuthChanges sẽ xử lý nếu phiên thực sự hết hạn
-    }
+    } catch (_) {}
   }
 
   /// Chỉ reconnect Realtime khi socket đang thực sự rớt
@@ -144,6 +147,16 @@ Stream<T> autoReconnectStream<T>(
   scheduleRetry = () {
     if (stopped) return;
     retryTimer?.cancel();
+    // Giới hạn retry: sau 20 lần (tối đa ~30s backoff × 20 ≈ 10 phút),
+    // dừng để tránh loop vô tận khi refresh_token hết hạn.
+    if (retryCount > 20) {
+      AppLogger.instance.warning(
+        'Realtime "$label": quá nhiều retry ($retryCount), dừng.',
+        category: 'realtime_retry',
+      );
+      stopped = true;
+      return;
+    }
     final shift = (retryCount - 1).clamp(0, 6);
     final ms = (initialBackoff.inMilliseconds * (1 << shift))
         .clamp(1, maxBackoff.inMilliseconds);
@@ -159,7 +172,21 @@ Stream<T> autoReconnectStream<T>(
       // Refresh JWT (nếu sắp/hết hạn) TRƯỚC khi (re)subscribe: nếu token đã
       // hết hạn, server sẽ từ chối với "InvalidJWTToken: Token has expired"
       // và stream cứ lặp lại lỗi mãi tới khi token được refresh.
-      await SupabaseService.ensureFreshSession();
+      try {
+        await SupabaseService.ensureFreshSession();
+      } catch (_) {
+        // Refresh thất bại — có thể refresh_token hết hạn.
+        // Vẫn subscribe với token hiện tại: nếu cũng hết hạn, onError sẽ xử lý.
+        // Giới hạn retry tránh loop vô tận.
+        if (retryCount > 5) {
+          AppLogger.instance.warning(
+            'Realtime "$label": JWT refresh thất bại liên tiếp, dừng retry.',
+            category: 'realtime_retry',
+          );
+          stopped = true;
+          return;
+        }
+      }
       if (stopped) return;
       sub = create().listen(
         (value) {
@@ -175,7 +202,14 @@ Stream<T> autoReconnectStream<T>(
               data: {'error': '$e', 'attempt': retryCount},
             );
           }
-          scheduleRetry();
+          // Nếu là JWT expired, force refresh trước khi retry
+          if (SupabaseService.isAuthExpiredError(e)) {
+            SupabaseService.ensureFreshSession().whenComplete(() {
+              scheduleRetry();
+            });
+          } else {
+            scheduleRetry();
+          }
         },
         onDone: scheduleRetry,
       );

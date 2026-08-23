@@ -44,6 +44,7 @@ Future<void> confirmDiscardChanges(
 /// tránh mất dữ liệu do bấm nhầm.
 class DialogActionRow extends StatelessWidget {
   final VoidCallback? onCancel;
+  final String cancelLabel;
   final Widget primaryButton;
   final bool Function()? isDirty;
 
@@ -51,6 +52,7 @@ class DialogActionRow extends StatelessWidget {
     super.key,
     required this.onCancel,
     required this.primaryButton,
+    this.cancelLabel = 'Hủy',
     this.isDirty,
   });
 
@@ -83,9 +85,9 @@ class DialogActionRow extends StatelessWidget {
                 textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
               ),
-              child: const FittedBox(
+              child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text('Hủy'),
+                child: Text(cancelLabel),
               ),
             ),
           ),

@@ -482,6 +482,7 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
             ]),
           ),
           actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, 'edit'), child: const Text('Sửa')),
             TextButton(onPressed: () => Navigator.pop(ctx, 'tx'), child: const Text('Phát sinh')),
             ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
           ],
@@ -490,6 +491,15 @@ class _CustomersListScreenState extends State<CustomersListScreen> {
     );
     if (!mounted) return;
     if (action == 'tx') showAddDebtTxDialog(context, d);
+    if (action == 'edit') {
+      showAddDebtDialog(context,
+        initialType: 'supplier',
+        title: 'Sửa NCC',
+        showTypeSelector: false,
+        showAmount: false,
+        existing: d,
+      );
+    }
   }
 
   @override

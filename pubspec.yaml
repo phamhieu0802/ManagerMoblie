@@ -1,7 +1,7 @@
 name: repair_shop_app
 description: App quản lý cửa hàng sửa chữa điện thoại (Android + Windows)
 publish_to: 'none'
-version: 0.1.0
+version: 2.1.1+211
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -29,6 +29,12 @@ dependencies:
   win32_registry: ^1.1.5
   win32: ^5.5.0
   ffi: ^2.1.0
+
+  # Printing & Bluetooth
+  flutter_blue_plus: ^1.35.2
+  permission_handler: ^11.3.0
+  shared_preferences: ^2.5.5
+  printing: ^5.12.0
 
   # UI / tiện ích
   cupertino_icons: ^1.0.6

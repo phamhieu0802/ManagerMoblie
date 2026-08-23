@@ -11,6 +11,7 @@ import '../../../core/app_toast.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/photo_upload.dart';
 import '../../../core/printer_service.dart';
+import '../../../core/printer_config_service.dart';
 import '../../../models/repair_order.dart';
 import '../../../models/store.dart';
 import '../../../widgets/status_chip.dart';
@@ -511,12 +512,14 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
         } catch (_) {}
 
         // Đã có phát sinh nợ cho đơn này -> chỉ chỉnh lại số tiền (chênh lệch).
+        // Lọc deleted_at IS NULL để bản ghi đã đảo (soft-delete) không bị nhận nhầm.
         final debtTx = await SupabaseService.client
             .from('debt_transactions')
             .select('id, debt_id, amount')
             .eq('store_id', storeId)
             .eq('type', 'add')
             .eq('description', 'Đơn $orderCode')
+            .isFilter('deleted_at', null)
             .maybeSingle();
         if (debtTx != null) {
           final diff = amount - ((debtTx['amount'] as num?) ?? amount);
@@ -638,15 +641,22 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
 
     if (o.paymentMethod == 'debt') {
       try {
+        // Chỉ đảo các bản ghi chưa bị xóa mềm (tránh reverse 2 lần).
         final rows = await SupabaseService.client
             .from('debt_transactions')
-            .select('id, debt_id')
+            .select('id, debt_id, amount')
             .eq('store_id', storeId)
             .eq('type', 'add')
-            .eq('description', 'Đơn ${o.code}');
+            .eq('description', 'Đơn ${o.code}')
+            .isFilter('deleted_at', null);
         if (rows == null || (rows as List).isEmpty) return;
         final ids = (rows as List).map((r) => r['id'] as String).toList();
         final debtId = rows.first['debt_id'] as String?;
+        // Sum actual amounts từ các debt_transaction thay vì dùng amount từ order.
+        num reverseTotal = 0;
+        for (final r in rows as List) {
+          reverseTotal += (r['amount'] as num?) ?? 0;
+        }
         await SupabaseService.client.from('debt_transactions').update({
           'deleted_at': DateTime.now().toIso8601String(),
           'deleted_by': SupabaseService.currentUser?.id ?? '',
@@ -658,7 +668,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
               .eq('id', debtId)
               .maybeSingle();
           if (debt != null) {
-            final remaining = ((debt['total_debt'] as num?) ?? 0) - (amount * ids.length);
+            final remaining = ((debt['total_debt'] as num?) ?? 0) - reverseTotal;
             await SupabaseService.client.from('debts')
                 .update({'total_debt': remaining > 0 ? remaining : 0})
                 .eq('id', debtId);
@@ -712,7 +722,8 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
           .from('debt_transactions')
           .select('id, amount, debt_id, description')
           .eq('store_id', storeId)
-          .eq('repair_order_id', o.id);
+          .eq('repair_order_id', o.id)
+          .isFilter('deleted_at', null);
       matched.addAll((res as List).cast<Map<String, dynamic>>());
     } catch (_) {
       // Cột mới chưa có (chưa chạy migration) -> dò theo mô tả.
@@ -724,6 +735,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             .select('id, amount, debt_id, description')
             .eq('store_id', storeId)
             .eq('type', 'add')
+            .isFilter('deleted_at', null)
             .like('description', '%Nhập kho%');
         matched.addAll((fetched as List)
             .where((r) => _norm((r['description'] ?? '').toString()).contains(_norm('Đơn ${o.code}')))
@@ -849,7 +861,8 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
           .select('id, amount, debt_id, description')
           .eq('store_id', storeId)
           .eq('repair_order_id', orderId)
-          .eq('inventory_part_id', partId);
+          .eq('inventory_part_id', partId)
+          .isFilter('deleted_at', null);
       matched.addAll((res as List).cast<Map<String, dynamic>>());
     } catch (_) {
       // Cột mới chưa có (chưa chạy migration) -> rơi xuống dò theo mô tả.
@@ -861,6 +874,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             .select('id, amount, debt_id, description')
             .eq('store_id', storeId)
             .eq('type', 'add')
+            .isFilter('deleted_at', null)
             .like('description', '%Nhập kho%');
         matched.addAll((fetched as List).where((r) {
           final desc = _norm((r['description'] ?? '').toString());
@@ -990,6 +1004,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             c['is_external'] == true &&
             !originalPartsUsed.any((o) => o['part_id'] == c['part_id']))
         .toList();
+    if (ctx.mounted) Navigator.pop(ctx);
     if (newExternal.isNotEmpty) {
       try {
         final now = DateTime.now().toIso8601String();
@@ -1007,7 +1022,6 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
         }
       } catch (_) {}
     }
-    if (ctx.mounted) Navigator.pop(ctx);
   }
 
   /// Trừ kho atomic qua RPC (chỉ trừ khi còn đủ hàng), trả false nếu không đủ.
@@ -1153,6 +1167,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
       ),
       actionsBuilder: (ctx, setStateInner) => DialogActionRow(
         onCancel: saving ? null : () => Navigator.pop(ctx),
+        cancelLabel: 'Xong',
         isDirty: () => nameCtrl.text.trim().isNotEmpty,
         primaryButton: ElevatedButton(
           onPressed: saving
@@ -1239,7 +1254,19 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                       });
                     });
 
-                    if (ctx.mounted) Navigator.pop(ctx);
+                    // Reset form để có thể thêm tiếp linh kiện khác
+                    if (ctx.mounted) {
+                      setStateInner(() {
+                        saving = false;
+                        nameCtrl.clear();
+                        qtyCtrl.text = '1';
+                        costCtrl.text = '0';
+                        nccCtrl.clear();
+                        selectedSupplier = null;
+                        categoryId = null;
+                        error = null;
+                      });
+                    }
                   } catch (e) {
                     setStateInner(() {
                       saving = false;
@@ -1249,7 +1276,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                 },
           child: saving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1D4ED8)))
-              : const Text('Lưu'),
+              : const Text('Thêm'),
         ),
       ),
     );
@@ -1413,9 +1440,15 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                           final p = filtered[i];
                           final idx = currentParts.indexWhere((e) => e['part_id'] == p['id']);
                           final qty = idx >= 0 ? currentParts[idx]['quantity'] as int : 0;
+                          final stock = (p['quantity'] as num?)?.toInt() ?? 0;
+                          final outOfStock = stock <= 0;
                           return ListTile(
                             leading: GestureDetector(
-                              onTap: () async {
+                              onTap: outOfStock
+                                  ? () {
+                                      showToast(context, '${p['name']} đã hết hàng, không thể chọn.');
+                                    }
+                                  : () async {
                                 final ctrl = TextEditingController(text: qty > 0 ? qty.toString() : '1');
                                 final result = await showDialog<int>(
                                   context: context,
@@ -1466,7 +1499,15 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               ),
                             ),
                             title: Text(p['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text('Tồn kho: ${p['quantity']}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              outOfStock ? 'Hết hàng' : 'Tồn kho: $stock',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: outOfStock ? Colors.red.shade600 : null,
+                                fontWeight: outOfStock ? FontWeight.w600 : null,
+                              ),
+                            ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -1485,7 +1526,11 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                                 Text('$qty', style: const TextStyle(fontWeight: FontWeight.w600)),
                                 IconButton(
                                   icon: const Icon(Icons.add_circle_outline),
-                                  onPressed: () => setStateSheet(() => setStateDialog(() {
+                                  onPressed: outOfStock
+                                      ? () {
+                                          showToast(context, '${p['name']} đã hết hàng, không thể chọn.');
+                                        }
+                                      : () => setStateSheet(() => setStateDialog(() {
                                         if (idx >= 0) {
                                           currentParts[idx]['quantity'] = qty + 1;
                                         } else {
@@ -1799,7 +1844,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             paidAt != initialPaidAt ||
             warrantyCtrl.text.trim() != editing.warrantyDays.toString() ||
             priceCtrl.text.trim() !=
-                (editing.estimatedCost == 0 ? '' : editing.estimatedCost.toStringAsFixed(0));
+                ((editing.finalCost != 0 ? editing.finalCost : editing.estimatedCost) == 0 ? '' : (editing.finalCost != 0 ? editing.finalCost : editing.estimatedCost).toStringAsFixed(0));
       }
       return nameCtrl.text.trim().isNotEmpty ||
           phoneCtrl.text.trim().isNotEmpty ||
@@ -2725,6 +2770,17 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                             final leavingDelivered =
                                 isEditing && editing.status == 'delivered' && status != 'delivered';
                             final paidDate = paidAt;
+                            // Mô tả thay đổi cho Discord notification
+                            String? changes;
+                            if (isEditing) {
+                              final c = <String>[];
+                              if (modelCtrl.text.trim() != (editing.deviceModel ?? '')) c.add('Model');
+                              if (status != editing.status) c.add('Trạng thái');
+                              if (assignedToId != editing.technicianId) c.add('KTV');
+                              final newPrice = num.tryParse(priceCtrl.text.trim()) ?? 0;
+                              if (newPrice != editing.estimatedCost) c.add('Báo giá');
+                              if (c.isNotEmpty) changes = c.join(', ');
+                            }
                             final payload = {
                               'customer_id': customerId,
                               'device_model': modelCtrl.text.trim().isEmpty ? null : modelCtrl.text.trim(),
@@ -2745,12 +2801,14 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                                 // nếu không chọn thì lấy thời điểm hiện tại.
                                 if (statusActuallyChanged || paidAt != null)
                                   'delivered_at': (paidAt ?? DateTime.now()).toIso8601String(),
+                                'delivered_by': uid,
                                 'final_cost': num.tryParse(priceCtrl.text.trim()) ?? 0,
                                 // Thanh toán lúc trả máy: không chọn ngày thì mặc định hôm nay.
                                 'paid_at': (paidAt ?? DateTime.now()).toIso8601String(),
                               },
                               if (leavingDelivered) ...{
                                 'delivered_at': null,
+                                'delivered_by': null,
                                 'paid_at': null,
                               },
                               // Sửa lại ngày trả máy -> ngày tạo đơn tự sửa trùng với
@@ -2772,6 +2830,15 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               orderId = editing.id;
                               orderCode = editing.code;
                               await SupabaseService.client.from('repair_orders').update(payload).eq('id', orderId);
+                              try {
+                                DiscordWebhook.notifyOrderUpdated(
+                                  storeId: storeId,
+                                  orderCode: orderCode,
+                                  customerName: nameCtrl.text.trim(),
+                                  technicianId: assignedToId,
+                                  changes: changes,
+                                );
+                              } catch (_) {}
                             } else {
                               orderCode = await _generateUniqueOrderCode(storeId);
                               final inserted = await SupabaseService.client
@@ -3513,6 +3580,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                             // nếu không chọn thì lấy thời điểm hiện tại.
                             if (initialStatus != status) {
                               payload['delivered_at'] = (paidAt ?? DateTime.now()).toIso8601String();
+                              payload['delivered_by'] = SupabaseService.currentUser?.id ?? '';
                             } else if (paidAt != null) {
                               // Đơn đã trả máy, sửa ngày thanh toán -> đồng bộ ngày trả máy.
                               payload['delivered_at'] = paidAt!.toIso8601String();
@@ -3544,6 +3612,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                             if (o.status == 'delivered' && status != 'delivered') {
                               await _reverseOrderRevenue(o, storeId);
                               perOrderPayload['delivered_at'] = null;
+                              perOrderPayload['delivered_by'] = null;
                               perOrderPayload['paid_at'] = null;
                               perOrderPayload['payment_method'] = null;
                             }
@@ -3810,6 +3879,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
     };
     if (newStatus == 'delivered') {
       payload['delivered_at'] = DateTime.now().toIso8601String();
+      payload['delivered_by'] = SupabaseService.currentUser?.id ?? '';
       payload['payment_method'] = paymentMethod;
       if (paymentMethod != 'debt') payload['paid_at'] = DateTime.now().toIso8601String();
     }
@@ -3820,6 +3890,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
     // Rời khỏi trạng thái "đã trả máy" -> đảo hạch toán và xoá các trường trả máy.
     if (order.status == 'delivered' && newStatus != 'delivered') {
       payload['delivered_at'] = null;
+      payload['delivered_by'] = null;
       payload['paid_at'] = null;
       payload['payment_method'] = null;
     }
@@ -3928,6 +3999,18 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
         'title': orders.length == 1 ? 'Đơn ${orders.first.code} đã bị xóa' : '${orders.length} đơn đã bị xóa',
         'body': 'Bởi ${me['full_name']} · Xem trong Thùng rác để khôi phục (còn 90 ngày).',
       });
+
+      // Discord webhook notification
+      try {
+        for (final o in orders) {
+          DiscordWebhook.notifyOrderDeleted(
+            storeId: storeId,
+            orderCode: o.code,
+            deletedByName: me['full_name'] as String? ?? '',
+            technicianId: o.technicianId,
+          );
+        }
+      } catch (_) {}
 
       if (mounted) {
         _clearSelection();
@@ -4044,10 +4127,22 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text('Máy in: ${store!.printerAddress ?? 'Chưa cấu hình'}',
-                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                  Text('Loại: ${Platform.isAndroid ? "Bluetooth" : "TCP/IP"}',
-                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                  FutureBuilder<PrinterConfig?>(
+                    future: PrinterConfigService.load(),
+                    builder: (ctx, snap) {
+                      final pc = snap.data;
+                      final hasConfig = pc != null && pc.address.isNotEmpty;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Máy in: ${hasConfig ? (pc!.name ?? pc.address) : 'Chưa cấu hình'}',
+                              style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                          Text('Loại: ${hasConfig ? (pc!.isThermal ? "Nhiệt" : "Laser") : "-"}',
+                              style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                        ],
+                      );
+                    },
+                  ),
                   const SizedBox(height: 8),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.print, size: 16),
@@ -4055,11 +4150,25 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                     onPressed: () async {
                       final s = store;
                       if (s == null) return;
-                      final addr = s.printerAddress;
-                      if (addr == null || addr.isEmpty) {
+                      final pc = await PrinterConfigService.load();
+                      if (pc == null || pc.address.isEmpty) {
                         showToast(ctx, 'Chưa cấu hình máy in trong Cài đặt');
                         return;
                       }
+                      // In laser → PDF
+                      if (pc.isLaser) {
+                        for (final o in orders) {
+                          final err = await PrinterService.printLaserPdf(
+                            store: s, order: o, staffName: staffName,
+                            headerText: s.printHeader, footerText: s.printFooter,
+                            showTimestamp: s.printShowTimestamp, showTaxCode: s.printShowTaxCode, showBank: s.printShowBank,
+                          );
+                          if (err != null && ctx.mounted) showToast(ctx, err, error: true);
+                        }
+                        if (ctx.mounted) showToast(ctx, 'Đã gửi lệnh in');
+                        return;
+                      }
+                      // In nhiệt → ESC/POS
                       Uint8List? qrBytes;
                       String? bankInfoText;
                       if (s.printShowBank) {
@@ -4076,10 +4185,11 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                       }
                       for (final o in orders) {
                         final err = await PrinterService.printReceipt(
-                          printerAddress: addr,
+                          printerAddress: pc.address,
                           receiptText: buildText(o),
                           qrImageBytes: qrBytes,
                           bankInfoText: bankInfoText,
+                          printerType: pc.type,
                         );
                         if (err != null && ctx.mounted) {
                           showToast(ctx, err, error: true);
@@ -4205,13 +4315,22 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
           final groups = <String, List<RepairOrder>>{};
           final sortedRows = List<Map<String, dynamic>>.from(rows);
           int paidBucket(Map<String, dynamic> r) {
-            if (r['status'] != 'delivered') return 2;
-            return r['payment_method'] == 'debt' ? 0 : 1;
+            final st = r['status'] as String?;
+            if (st == 'received' || st == 'repairing' || st == 'repaired') return 0;
+            if (st == 'delivered' && r['payment_method'] != 'debt') return 1;
+            if (st == 'delivered') return 2;
+            return 3;
           }
           if (_sortByPaidDate) {
             sortedRows.sort((a, b) {
               final ba = paidBucket(a), bb = paidBucket(b);
               if (ba != bb) return ba - bb;
+              if (ba == 0) {
+                // Active orders: sort by receivedAt descending
+                final da = DateTime.tryParse(a['received_at']?.toString() ?? '');
+                final db = DateTime.tryParse(b['received_at']?.toString() ?? '');
+                if (da != null && db != null) return db.compareTo(da);
+              }
               if (ba == 1) {
                 final da = DateTime.tryParse(a['paid_at']?.toString() ?? '') ??
                     DateTime.tryParse(a['received_at']?.toString() ?? '');
@@ -4226,12 +4345,15 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             final order = RepairOrder.fromMap(r);
             final String dateKey;
             if (_sortByPaidDate) {
-              if (order.status == 'delivered' && order.paymentMethod == 'debt') {
+              final st = order.status;
+              if (st == 'received' || st == 'repairing' || st == 'repaired') {
+                dateKey = 'Đang xử lý';
+              } else if (st == 'delivered' && order.paymentMethod == 'debt') {
                 dateKey = 'Chưa thanh toán';
-              } else if (order.status == 'delivered') {
+              } else if (st == 'delivered') {
                 dateKey = _dateFmt.format(order.paidAt ?? order.deliveredAt ?? order.receivedAt);
               } else {
-                dateKey = 'Chưa trả máy';
+                dateKey = 'Khác';
               }
             } else {
               dateKey = _dateFmt.format(order.receivedAt);
@@ -4261,7 +4383,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               children: [
                                 Text(
                                   _sortByPaidDate
-                                      ? (entry.key == 'Chưa thanh toán' || entry.key == 'Chưa trả máy'
+                                      ? (entry.key == 'Chưa thanh toán' || entry.key == 'Đang xử lý' || entry.key == 'Khác'
                                           ? entry.key
                                            : 'Ngày TT: ${entry.key}')
                                        : 'Ngày tạo: ${entry.key}',
@@ -4280,10 +4402,11 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(
-                              'Thu: ${_currency.format(_dayRevenue(entry.value))}',
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF16A34A)),
-                            ),
+                            if (_sortByPaidDate)
+                              Text(
+                                'Thu: ${_currency.format(_dayRevenue(entry.value))}',
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF2563EB)),
+                              ),
                             Text(
                               'Tổng số đơn: ${entry.value.length}',
                               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Colors.black54),
@@ -4321,7 +4444,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
     );
   }
 
-  /// Tổng doanh thu của 1 ngày (nhóm theo ngày tạo đơn): chỉ tính các đơn đã
+  /// Tổng doanh thu của 1 ngày (nhóm theo ngày TT): chỉ tính các đơn đã
   /// trả máy và đã thu tiền (bỏ qua đơn ghi nợ).
   num _dayRevenue(List<RepairOrder> orders) {
     num total = 0;

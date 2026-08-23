@@ -140,6 +140,7 @@ create table public.repair_orders (
   technician_id uuid references public.profiles(id),
   repaired_by uuid references public.profiles(id),
   received_by uuid references public.profiles(id),
+  delivered_by uuid references public.profiles(id),
   estimated_cost numeric(14,0) default 0,
   final_cost numeric(14,0) default 0,
   payment_method text,
@@ -156,6 +157,7 @@ create table public.repair_orders (
 );
 create index on public.repair_orders (store_id, status);
 create index on public.repair_orders (technician_id);
+create index on public.repair_orders (delivered_by);
 
 -- Repair order status history
 create table public.repair_order_status_history (
@@ -258,6 +260,7 @@ create table public.debts (
   contact_name text not null,
   contact_phone text,
   contact_address text,
+  contact_image text,
   total_debt numeric(14,0) default 0,
   note text,
   created_at timestamptz default now(),

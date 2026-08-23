@@ -56,6 +56,12 @@ class AppLogger {
   void _writeLocal(String level, String? category, String message, Map<String, dynamic>? data) {
     final file = _logFile;
     if (file == null) return;
+    // Ghi file bất đồng bộ để không block UI thread.
+    // ignore: unawaited_futures
+    _writeLocalAsync(file, level, category, message, data);
+  }
+
+  Future<void> _writeLocalAsync(File file, String level, String? category, String message, Map<String, dynamic>? data) async {
     try {
       final entry = {
         'ts': DateTime.now().toIso8601String(),
@@ -65,20 +71,32 @@ class AppLogger {
         'data': data,
       };
       final line = jsonEncode(entry);
-      final raf = file.openSync(mode: FileMode.append);
+      final raf = await file.open(mode: FileMode.append);
       try {
-        raf.writeStringSync('$line\n');
+        await raf.writeString('$line\n');
       } finally {
-        raf.closeSync();
+        await raf.close();
       }
       _trimIfNeeded(file);
     } catch (_) {}
   }
 
   void _trimIfNeeded(File file) {
+    // Bỏ qua nếu đang trim — tránh race condition khi nhiều log gọi cùng lúc.
+    if (_trimming) return;
+    _trimming = true;
+    // ignore: unawaited_futures
+    _trimIfNeededAsync(file).whenComplete(() => _trimming = false);
+  }
+
+  bool _trimming = false;
+
+  Future<void> _trimIfNeededAsync(File file) async {
     try {
-      if (file.lengthSync() <= _maxFileBytes) return;
-      final lines = file.readAsLinesSync();
+      if (!await file.exists()) return;
+      final size = await file.length();
+      if (size <= _maxFileBytes) return;
+      final lines = await file.readAsLines();
       if (lines.isEmpty) return;
       var total = 0;
       var start = lines.length;
@@ -88,7 +106,7 @@ class AppLogger {
         start = i;
       }
       if (start >= lines.length) return;
-      file.writeAsStringSync('${lines.sublist(start).join('\n')}\n');
+      await file.writeAsString('${lines.sublist(start).join('\n')}\n');
     } catch (_) {}
   }
 
