@@ -1,3 +1,4 @@
+import 'dart:async' show StreamSubscription;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -148,6 +149,9 @@ class _ThuChiChartSectionState extends State<_ThuChiChartSection> {
   late int _year;
   int? _selectedMonth;
   List<Map<String, dynamic>> _staffList = [];
+  // Biến đếm để buộc FutureBuilder reload khi transactions thay đổi.
+  int _txRevision = 0;
+  StreamSubscription? _txSub;
 
   bool get _isTechnician => widget.currentProfile.role == UserRole.technician;
 
@@ -162,6 +166,20 @@ class _ThuChiChartSectionState extends State<_ThuChiChartSection> {
     } else {
       _loadStaffList();
     }
+    // Lắng nghe realtime transactions → reload bảng tổng hợp.
+    final storeId = widget.currentProfile.storeId;
+    if (storeId != null) {
+      _txSub = autoReconnectStream(
+        () => SupabaseService.client.from('transactions').stream(primaryKey: ['id']).eq('store_id', storeId),
+        label: 'dashboard_tx',
+      ).listen((_) { if (mounted) setState(() => _txRevision++); });
+    }
+  }
+
+  @override
+  void dispose() {
+    _txSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadStaffList() async {
@@ -188,6 +206,7 @@ class _ThuChiChartSectionState extends State<_ThuChiChartSection> {
           .from('transactions')
           .select('id, type, amount, category, description, transaction_date, created_at, created_by')
           .eq('store_id', storeId)
+          .isFilter('deleted_at', null)
           .gte('created_at', wideStart.toIso8601String())
           .lt('created_at', wideEnd.toIso8601String());
       if (_targetTechId != null) {

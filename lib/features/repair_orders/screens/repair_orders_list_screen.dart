@@ -2796,6 +2796,8 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               if (statusActuallyChanged) 'aging_alert_level': 0,
                               if (status == 'repaired') 'completed_at': DateTime.now().toIso8601String(),
                               if (status == 'repaired') 'repaired_by': assignedToId,
+                              if (isEditing && editing.finalCost > 0)
+                                'final_cost': num.tryParse(priceCtrl.text.trim()) ?? 0,
                               if (status == 'delivered') ...{
                                 // Ngày trả máy = ngày thanh toán đã chọn (nếu có),
                                 // nếu không chọn thì lấy thời điểm hiện tại.

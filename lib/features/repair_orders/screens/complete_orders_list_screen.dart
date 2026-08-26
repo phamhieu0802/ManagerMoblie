@@ -25,6 +25,10 @@ Future<void> showCompleteOrderDialog({
   required List<String> allowedStatuses,
   required CompleteOrderStatusChange onChangeStatus,
 }) {
+  final isDesktop = Theme.of(context).platform == TargetPlatform.windows ||
+      Theme.of(context).platform == TargetPlatform.macOS ||
+      Theme.of(context).platform == TargetPlatform.linux;
+  final dialogWidth = isDesktop ? 420.0 : MediaQuery.of(context).size.width * 0.92;
   return showDialog(
     context: context,
     barrierDismissible: true,
@@ -32,7 +36,7 @@ Future<void> showCompleteOrderDialog({
       title: Text('Đơn hoàn tất ${order.code}'),
       contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       content: SizedBox(
-        width: 510,
+        width: dialogWidth,
         child: SingleChildScrollView(
           child: _CompleteOrderCard(
             order: order,
