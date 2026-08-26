@@ -1,6 +1,6 @@
 # Hướng Dẫn Cài Đặt & Sử Dụng
 
-**Manager MSR · v2.1.0** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows).
+**Manager MSR · v2.1.3** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows).
 
 ## 0. Xem hướng dẫn ngay trong app
 

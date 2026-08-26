@@ -2,7 +2,7 @@
 
 Flutter (Android + Windows) + Supabase (Auth, DB realtime, Storage) + Firebase Cloud Messaging.
 
-**Manager MSR · v2.1.0**
+**Manager MSR · v2.1.3**
 
 ## Tính năng đã hoàn thiện
 

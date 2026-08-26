@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 const String kAppName = 'Manager MSR';
-const String kAppVersion = 'v2.1.0';
+const String kAppVersion = 'v2.1.3';
 
 /// Trang thông tin ứng dụng: phiên bản, tính năng và hướng dẫn sử dụng.
 class AppInfoScreen extends StatelessWidget {
