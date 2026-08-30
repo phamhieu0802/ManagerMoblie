@@ -395,15 +395,15 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                     'sku': sku,
                     'category_id': categoryId,
                     'quantity': 0,
-                    'unit_cost': num.tryParse(costCtrl.text.trim()) ?? 0,
-                    'unit_price': num.tryParse(unitPriceCtrl.text.trim()) ?? 0,
+                    'unit_cost': num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0,
+                    'unit_price': num.tryParse(unitPriceCtrl.text.trim().replaceAll('.', '')) ?? 0,
                   })
                   .select()
                   .single();
               await AppLogger.instance.action(
                 'Thêm linh kiện mới "${nameCtrl.text.trim()}"',
                 category: 'kho',
-                data: {'sku': sku, 'cost': num.tryParse(costCtrl.text.trim()) ?? 0, 'price': num.tryParse(unitPriceCtrl.text.trim()) ?? 0},
+                data: {'sku': sku, 'cost': num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0, 'price': num.tryParse(unitPriceCtrl.text.trim().replaceAll('.', '')) ?? 0},
               );
               if (ctx.mounted) Navigator.pop(ctx);
             } catch (e) {
@@ -420,8 +420,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
   Future<void> _showEditPartDialog(Map<String, dynamic> part) async {
     final nameCtrl = TextEditingController(text: part['name'] ?? '');
-    final costCtrl = TextEditingController(text: (part['unit_cost'] as num?)?.toStringAsFixed(0) ?? '0');
-    final unitPriceCtrl = TextEditingController(text: (part['unit_price'] as num?)?.toStringAsFixed(0) ?? '0');
+    final costCtrl = TextEditingController(text: MoneyInputField.formatNum((part['unit_cost'] as num?) ?? 0));
+    final unitPriceCtrl = TextEditingController(text: MoneyInputField.formatNum((part['unit_price'] as num?) ?? 0));
     final barcodeCtrl = TextEditingController(text: part['barcode'] ?? '');
     final imeiCtrl = TextEditingController(text: part['imei'] ?? '');
     final thresholdCtrl = TextEditingController(text: (part['low_stock_threshold'] as int?)?.toString() ?? '3');
@@ -560,8 +560,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   .update({
                     'name': nameCtrl.text.trim(),
                     'category_id': categoryId,
-                    'unit_cost': num.tryParse(costCtrl.text.trim()) ?? 0,
-                    'unit_price': num.tryParse(unitPriceCtrl.text.trim()) ?? 0,
+                    'unit_cost': num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0,
+                    'unit_price': num.tryParse(unitPriceCtrl.text.trim().replaceAll('.', '')) ?? 0,
                     'barcode': barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
                     'imei': imeiCtrl.text.trim().isEmpty ? null : imeiCtrl.text.trim(),
                     'low_stock_threshold': int.tryParse(thresholdCtrl.text.trim()) ?? 3,
@@ -714,7 +714,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           ),
           child: Builder(builder: (context) {
             final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
-            final cost = num.tryParse(costCtrl.text.trim()) ?? 0;
+            final cost = num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0;
             final total = qty * cost;
             return Text(
               'Thành tiền: ${_currency.format(total)}',
@@ -742,7 +742,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
             }
             setStateDialog(() { saving = true; error = null; });
             try {
-              final cost = num.tryParse(costCtrl.text.trim()) ?? 0;
+              final cost = num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0;
               final newQty = currentQty + qty;
               final total = cost * qty;
               final hasSupplier = nccCtrl.text.trim().isNotEmpty;
@@ -893,8 +893,8 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 'name': p['name'] ?? '',
                 'stock': p['quantity'] as int? ?? 0,
                 'qtyCtrl': TextEditingController(text: '$qty'),
-                'costCtrl': TextEditingController(text: ((p['unit_cost'] as num?) ?? 0).toStringAsFixed(0)),
-                'priceCtrl': TextEditingController(text: ((p['unit_price'] as num?) ?? 0).toStringAsFixed(0)),
+                'costCtrl': TextEditingController(text: MoneyInputField.formatNum((p['unit_cost'] as num?) ?? 0)),
+                'priceCtrl': TextEditingController(text: MoneyInputField.formatNum((p['unit_price'] as num?) ?? 0)),
               });
             });
           }

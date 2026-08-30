@@ -11,6 +11,7 @@ import '../../../widgets/money_input_field.dart';
 import '../../../widgets/dialog_action_row.dart';
 import '../../../widgets/adaptive_form_dialog.dart';
 import '../widgets/debt_dialogs.dart';
+import '../widgets/category_picker_field.dart';
 
 final _currency = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ', decimalDigits: 0);
 final _dateFmt = DateFormat('dd/MM/yyyy');
@@ -437,7 +438,21 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     }
   }
 
+  /// Lấy store_id của người dùng hiện tại (fallback về '' nếu lỗi).
+  Future<String> _currentStoreId() async {
+    try {
+      final user = SupabaseService.currentUser;
+      if (user == null) return '';
+      final row = await SupabaseService.client.from('profiles')
+          .select('store_id').eq('id', user.id).single();
+      return (row['store_id'] ?? '').toString();
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _showAddTransactionDialog() async {
+    final storeId = await _currentStoreId();
     final amountCtrl = TextEditingController();
     final categoryCtrl = TextEditingController();
     final descCtrl = TextEditingController();
@@ -447,6 +462,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     DateTime txDate = DateTime.now();
     bool saving = false;
     String? error;
+    if (!mounted) return;
 
     await showAdaptiveFormDialog(
       context: context,
@@ -483,15 +499,9 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           },
         ),
         const SizedBox(height: 12),
-        MoneyInputField(controller: amountCtrl, label: 'Số tiền *'),
+        CategoryPickerField(storeId: storeId, controller: categoryCtrl),
         const SizedBox(height: 8),
-        TextField(
-          controller: categoryCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Danh mục',
-            helperText: 'VD: Mặt bằng, Điện nước, Thu ngoài, Sửa chữa...',
-          ),
-        ),
+        MoneyInputField(controller: amountCtrl, label: 'Số tiền *'),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () async {
@@ -516,7 +526,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         isDirty: () => amountCtrl.text.trim().isNotEmpty,
         primaryButton: ElevatedButton(
           onPressed: saving ? null : () async {
-            final amount = num.tryParse(amountCtrl.text.trim());
+            final amount = num.tryParse(amountCtrl.text.trim().replaceAll('.', ''));
             if (amount == null || amount <= 0) { setStateDialog(() => error = 'Nhập số tiền hợp lệ.'); return; }
             setStateDialog(() { saving = true; error = null; });
             try {
@@ -563,7 +573,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
   }
 
   Future<void> _showEditTransactionDialog(BuildContext context, Map<String, dynamic> t) async {
-    final amountCtrl = TextEditingController(text: (t['amount'] as num?)?.toStringAsFixed(0) ?? '');
+    final storeId = await _currentStoreId();
+    final amountCtrl = TextEditingController(text: MoneyInputField.formatNum((t['amount'] as num?) ?? 0));
     final categoryCtrl = TextEditingController(text: (t['category'] ?? '').toString());
     final descCtrl = TextEditingController(text: (t['description'] ?? '').toString());
     String type = (t['type'] ?? 'income') == 'expense' ? 'expense' : 'income';
@@ -624,15 +635,9 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           },
         ),
         const SizedBox(height: 12),
-        MoneyInputField(controller: amountCtrl, label: 'Số tiền *'),
+        CategoryPickerField(storeId: storeId, controller: categoryCtrl),
         const SizedBox(height: 8),
-        TextField(
-          controller: categoryCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Danh mục',
-            helperText: 'VD: Mặt bằng, Điện nước, Thu ngoài, Sửa chữa...',
-          ),
-        ),
+        MoneyInputField(controller: amountCtrl, label: 'Số tiền *'),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () async {
@@ -662,7 +667,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             !txDate.isAtSameMomentAs(DateTime.tryParse(t['transaction_date']?.toString() ?? '') ?? txDate),
         primaryButton: ElevatedButton(
           onPressed: saving ? null : () async {
-            final amount = num.tryParse(amountCtrl.text.trim());
+            final amount = num.tryParse(amountCtrl.text.trim().replaceAll('.', ''));
             if (amount == null || amount <= 0) { setStateDialog(() => error = 'Nhập số tiền hợp lệ.'); return; }
             setStateDialog(() { saving = true; error = null; });
             try {

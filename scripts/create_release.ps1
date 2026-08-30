@@ -17,7 +17,7 @@ param(
     [string]$Changelog = ""
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ghPath = "C:\Program Files\GitHub CLI\gh.exe"
 $isccPath = "C:\Users\Admin\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
@@ -162,7 +162,7 @@ Write-Host $Changelog -ForegroundColor Gray
 # ============================================================
 Write-Host "`nDang commit va push..." -ForegroundColor Yellow
 git -C $repoRoot add -A
-git -C $repoRoot commit -m "v$newVersion: release"
+git -C $repoRoot commit -m "v${newVersion}: release"
 $token = & $ghPath auth token 2>$null
 $token = $token.Trim()
 git -C $repoRoot remote set-url origin "https://x-access-token:${token}@github.com/phamhieu0802/ManagerMoblie.git"

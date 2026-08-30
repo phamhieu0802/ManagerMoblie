@@ -1185,7 +1185,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                   try {
                     final uid = SupabaseService.currentUser?.id ?? '';
                     final qtyUsed = qty;
-                    final costTotal = (num.tryParse(costCtrl.text.trim()) ?? 0) * qtyUsed;
+                    final costTotal = (num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0) * qtyUsed;
                     final supplierName = nccCtrl.text.trim();
 
                     // Hỏi hình thức thanh toán TRƯỚC khi tạo linh kiện trong
@@ -1222,7 +1222,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                           'sku': sku,
                           'category_id': categoryId,
                           'quantity': qty,
-                          'unit_cost': num.tryParse(costCtrl.text.trim()) ?? 0,
+                          'unit_cost': num.tryParse(costCtrl.text.trim().replaceAll('.', '')) ?? 0,
                           'is_external': true,
                         })
                         .select()
@@ -1577,7 +1577,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
     final issueCtrl = TextEditingController(text: editing?.issueDescription ?? '');
     final priceCtrl = TextEditingController(
       text: editing != null
-          ? (editing.finalCost != 0 ? editing.finalCost : editing.estimatedCost).toStringAsFixed(0)
+          ? MoneyInputField.formatNum(editing.finalCost != 0 ? editing.finalCost : editing.estimatedCost)
           : '',
     );
     final warrantyCtrl = TextEditingController(
@@ -2516,7 +2516,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                         key: 'price',
                         label: 'Giá tiền',
                         hasValue: priceCtrl.text.trim().isNotEmpty,
-                        viewChild: Text(_currency.format(num.tryParse(priceCtrl.text.trim()) ?? 0), style: const TextStyle(fontSize: 14)),
+                        viewChild: Text(_currency.format(num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0), style: const TextStyle(fontSize: 14)),
                         editChild: MoneyInputField(controller: priceCtrl, label: 'Giá tiền'),
                       ),
                       const SizedBox(height: 8),
@@ -2564,7 +2564,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               key: 'price',
                               label: 'Giá tiền',
                               hasValue: priceCtrl.text.trim().isNotEmpty,
-                              viewChild: Text(_currency.format(num.tryParse(priceCtrl.text.trim()) ?? 0), style: const TextStyle(fontSize: 14)),
+                              viewChild: Text(_currency.format(num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0), style: const TextStyle(fontSize: 14)),
                               editChild: MoneyInputField(controller: priceCtrl, label: 'Giá tiền'),
                             ),
                           ),
@@ -2777,7 +2777,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               if (modelCtrl.text.trim() != (editing.deviceModel ?? '')) c.add('Model');
                               if (status != editing.status) c.add('Trạng thái');
                               if (assignedToId != editing.technicianId) c.add('KTV');
-                              final newPrice = num.tryParse(priceCtrl.text.trim()) ?? 0;
+                              final newPrice = num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0;
                               if (newPrice != editing.estimatedCost) c.add('Báo giá');
                               if (c.isNotEmpty) changes = c.join(', ');
                             }
@@ -2787,7 +2787,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               'imei': imeiCtrl.text.trim().isEmpty ? null : imeiCtrl.text.trim(),
                               'issue_description': issueCtrl.text.trim().isEmpty ? null : issueCtrl.text.trim(),
                               'note': noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-                              'estimated_cost': num.tryParse(priceCtrl.text.trim()) ?? 0,
+                              'estimated_cost': num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0,
                               'warranty_days': int.tryParse(warrantyCtrl.text.trim()) ?? 0,
                               'technician_id': assignedToId,
                               'status': status,
@@ -2797,14 +2797,14 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               if (status == 'repaired') 'completed_at': DateTime.now().toIso8601String(),
                               if (status == 'repaired') 'repaired_by': assignedToId,
                               if (isEditing && editing.finalCost > 0)
-                                'final_cost': num.tryParse(priceCtrl.text.trim()) ?? 0,
+                                'final_cost': num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0,
                               if (status == 'delivered') ...{
                                 // Ngày trả máy = ngày thanh toán đã chọn (nếu có),
                                 // nếu không chọn thì lấy thời điểm hiện tại.
                                 if (statusActuallyChanged || paidAt != null)
                                   'delivered_at': (paidAt ?? DateTime.now()).toIso8601String(),
                                 'delivered_by': uid,
-                                'final_cost': num.tryParse(priceCtrl.text.trim()) ?? 0,
+                                'final_cost': num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0,
                                 // Thanh toán lúc trả máy: không chọn ngày thì mặc định hôm nay.
                                 'paid_at': (paidAt ?? DateTime.now()).toIso8601String(),
                               },
@@ -3103,7 +3103,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                             // hoặc công nợ. _recordDeliveredRevenue idempotent nên gọi lại
                             // an toàn (kể cả khi chỉ sửa giá/phương thức thanh toán).
                             if (status == 'delivered') {
-                              final finalAmount = num.tryParse(priceCtrl.text.trim()) ?? 0;
+                              final finalAmount = num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0;
                               if (finalAmount > 0) {
                                 // Đơn đang trả máy và đổi phương thức thanh toán ->
                                 // đảo hạch toán cũ rồi ghi lại theo phương thức mới.
@@ -3362,7 +3362,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
         ? 0
         : (single.finalCost != 0 ? single.finalCost : single.estimatedCost);
     final priceCtrl = TextEditingController(
-      text: initialPriceValue == 0 ? '' : initialPriceValue.toStringAsFixed(0),
+      text: initialPriceValue == 0 ? '' : MoneyInputField.formatNum(initialPriceValue),
     );
     final noteCtrl = TextEditingController(text: single?.note ?? '');
     DateTime? paidAt = single?.paidAt;
@@ -3574,7 +3574,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                             payload['technician_id'] = assignedToId;
                           }
                           if (!isBulk) {
-                            payload['final_cost'] = num.tryParse(priceCtrl.text.trim()) ?? 0;
+                            payload['final_cost'] = num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0;
                             payload['note'] = noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim();
                           }
                           if (status == 'delivered') {
@@ -3671,7 +3671,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
                               if (initialStatus == 'delivered' && paymentMethod != initialPaymentMethod) {
                                 await _reverseOrderRevenue(single!, storeId);
                               }
-                              final finalAmount = num.tryParse(priceCtrl.text.trim()) ?? 0;
+                              final finalAmount = num.tryParse(priceCtrl.text.trim().replaceAll('.', '')) ?? 0;
                               if (finalAmount > 0) {
                                 await _recordDeliveredRevenue(
                                   orderId: single!.id,
@@ -4618,7 +4618,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
   Future<void> _showQuickPriceDialog(RepairOrder order) async {
     final editingFinal = order.finalCost > 0;
     final current = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
-    final ctrl = TextEditingController(text: current > 0 ? current.toStringAsFixed(0) : '');
+    final ctrl = TextEditingController(text: current > 0 ? MoneyInputField.formatNum(current) : '');
     String? error;
     var saving = false;
 
@@ -4676,7 +4676,7 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
             ),
             ElevatedButton(
               onPressed: saving ? null : () async {
-                final v = num.tryParse(ctrl.text.trim());
+                final v = num.tryParse(ctrl.text.trim().replaceAll('.', ''));
                 if (v == null || v <= 0) {
                   setStateDialog(() => error = 'Nhập giá tiền hợp lệ.');
                   return;

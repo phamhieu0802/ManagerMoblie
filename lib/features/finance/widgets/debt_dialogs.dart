@@ -166,7 +166,7 @@ Future<void> showAddDebtDialog(
       isDirty: () => nameCtrl.text.trim().isNotEmpty || (showAmount && amountCtrl.text.trim().isNotEmpty),
       primaryButton: ElevatedButton(
         onPressed: saving ? null : () async {
-          final amount = showAmount ? num.tryParse(amountCtrl.text.trim()) : null;
+          final amount = showAmount ? num.tryParse(amountCtrl.text.trim().replaceAll('.', '')) : null;
           if (nameCtrl.text.trim().isEmpty || (showAmount && (amount == null || amount <= 0))) {
             setStateDialog(() => error = showAmount ? 'Nhập tên và số tiền hợp lệ.' : 'Nhập tên hợp lệ.'); return;
           }
@@ -292,7 +292,7 @@ Future<void> showAddDebtTxDialog(BuildContext context, Map<String, dynamic> debt
       isDirty: () => amountCtrl.text.trim().isNotEmpty,
       primaryButton: ElevatedButton(
         onPressed: saving ? null : () async {
-          final amount = num.tryParse(amountCtrl.text.trim());
+          final amount = num.tryParse(amountCtrl.text.trim().replaceAll('.', ''));
           if (amount == null || amount <= 0) {
             setStateDialog(() => error = 'Nhập số tiền hợp lệ.'); return;
           }
@@ -358,7 +358,7 @@ Future<void> showEditDebtTxDialog(
   Map<String, dynamic> debt,
   Map<String, dynamic> tx,
 ) async {
-  final amountCtrl = TextEditingController(text: (tx['amount'] as num?)?.toStringAsFixed(0) ?? '');
+  final amountCtrl = TextEditingController(text: MoneyInputField.formatNum((tx['amount'] as num?) ?? 0));
   final descCtrl = TextEditingController(text: (tx['description'] ?? '').toString());
   String type = ['add', 'pay', 'deduct'].contains(tx['type']) ? tx['type'] as String : 'add';
   DateTime txDate = DateTime.tryParse(tx['transaction_date']?.toString() ?? '') ??
@@ -415,7 +415,7 @@ Future<void> showEditDebtTxDialog(
           type != oldType,
       primaryButton: ElevatedButton(
         onPressed: saving ? null : () async {
-          final amount = num.tryParse(amountCtrl.text.trim());
+          final amount = num.tryParse(amountCtrl.text.trim().replaceAll('.', ''));
           if (amount == null || amount <= 0) {
             setStateDialog(() => error = 'Nhập số tiền hợp lệ.'); return;
           }
