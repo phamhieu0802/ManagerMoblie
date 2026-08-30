@@ -95,44 +95,30 @@ class _CategoryPickerFieldState extends State<CategoryPickerField> {
         decoration: InputDecoration(labelText: 'Danh mục', hintText: 'Đang tải...'),
       );
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            initialValue: hasCurrent ? current : null,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Danh mục',
-              helperText: 'Chọn danh mục đã có hoặc thêm mới bằng nút +',
-            ),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('-- Không có --')),
-              for (final c in _categories)
-                DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: widget.enabled
-                ? (v) {
-                    widget.controller.text = v ?? '';
-                    widget.onChanged?.call();
-                  }
-                : null,
-          ),
+    return DropdownButtonFormField<String>(
+      initialValue: hasCurrent ? current : null,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: 'Danh mục',
+        helperText: 'Chọn danh mục đã có hoặc thêm mới bằng nút +',
+        suffixIcon: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: widget.enabled ? _addNewCategory : null,
+          child: const Icon(Icons.add, size: 18),
         ),
-        const SizedBox(width: 4),
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Tooltip(
-            message: 'Thêm danh mục mới',
-            child: IconButton(
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.add_circle_outline, size: 22),
-              color: Theme.of(context).colorScheme.primary,
-              onPressed: widget.enabled ? _addNewCategory : null,
-            ),
-          ),
-        ),
+        suffixIconConstraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      ),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('-- Không có --')),
+        for (final c in _categories)
+          DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)),
       ],
+      onChanged: widget.enabled
+          ? (v) {
+              widget.controller.text = v ?? '';
+              widget.onChanged?.call();
+            }
+          : null,
     );
   }
 }

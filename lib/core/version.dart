@@ -1,5 +1,5 @@
 /// Phiên bản hiện tại của app.
-const String currentAppVersion = '2.1.5';
+const String currentAppVersion = '2.1.6';
 
 /// So sánh 2 version string (major.minor.patch).
 /// Trả về:
