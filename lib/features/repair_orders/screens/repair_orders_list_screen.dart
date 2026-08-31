@@ -20,6 +20,7 @@ import '../../../widgets/realtime_stream_view.dart';
 import '../../../widgets/money_input_field.dart';
 import '../../../widgets/dialog_action_row.dart';
 import '../../../widgets/adaptive_form_dialog.dart';
+import '../../home/widgets/app_shell.dart';
 import '../../../widgets/anchor_dropdown.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../core/discord_webhook.dart';
@@ -65,6 +66,9 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
   final Set<String> _agingAlertsInFlight = {};
   bool _sortByPaidDate = false;
   List<Map<String, dynamic>> _latestRows = [];
+  String? _highlightOrderId;
+  DateTime? _highlightUntil;
+  void Function()? _focusListener;
 
   @override
   void initState() {
@@ -105,11 +109,27 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
       _showSearch = true;
       _searchCtrl.text = widget.initialSearch!;
     }
+    _focusListener = () => _onGlobalFocus(globalRepairOrderFocus.value);
+    globalRepairOrderFocus.addListener(_focusListener!);
     _reloadOrders();
+  }
+
+  void _onGlobalFocus(RepairOrderFocusRequest? req) {
+    if (req == null) return;
+    // Đã xử lý -> reset để lần nhấn sau phát lại sự kiện.
+    globalRepairOrderFocus.value = null;
+    if (!mounted) return;
+    setState(() {
+      _showSearch = true;
+      _searchCtrl.text = req.orderCode;
+      _highlightOrderId = req.orderId;
+      _highlightUntil = DateTime.now().add(const Duration(seconds: 6));
+    });
   }
 
   @override
   void dispose() {
+    if (_focusListener != null) globalRepairOrderFocus.removeListener(_focusListener!);
     _ordersSub?.cancel();
     _ordersController.close();
     _customersSub?.cancel();
@@ -4488,9 +4508,20 @@ class _RepairOrdersListScreenState extends State<RepairOrdersListScreen> {
     ];
     final line2 = line2Parts.join(' · ');
 
+    final bool highlight = _highlightOrderId == order.id &&
+        _highlightUntil != null && DateTime.now().isBefore(_highlightUntil!);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: selected ? const Color(0xFFDCEBFF) : null,
+      color: highlight
+          ? const Color(0xFFFFF3C4)
+          : (selected ? const Color(0xFFDCEBFF) : null),
+      shape: highlight
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xFFF59E0B), width: 2),
+            )
+          : null,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: isComplete

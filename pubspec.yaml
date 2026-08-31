@@ -1,7 +1,7 @@
 name: repair_shop_app
 description: App quản lý cửa hàng sửa chữa điện thoại (Android + Windows)
 publish_to: 'none'
-version: 2.1.6+20106
+version: 2.1.7+20107
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

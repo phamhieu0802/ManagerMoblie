@@ -12,6 +12,10 @@ import '../../../widgets/dialog_action_row.dart';
 import '../../../widgets/adaptive_form_dialog.dart';
 import '../widgets/debt_dialogs.dart';
 import '../widgets/category_picker_field.dart';
+import '../../repair_orders/screens/complete_orders_list_screen.dart';
+import '../../repair_orders/screens/repair_orders_list_screen.dart';
+import '../../../models/repair_order.dart' as ro;
+import '../../home/widgets/app_shell.dart';
 
 final _currency = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ', decimalDigits: 0);
 final _dateFmt = DateFormat('dd/MM/yyyy');
@@ -451,6 +455,60 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     }
   }
 
+  /// Bấm vào 1 giao dịch trong danh sách.
+  /// - Giao dịch từ ĐƠN SỬA CHỮA (có `repair_order_id`): chỉ xem, mở dialog
+  ///   đơn hoàn tất ở chế độ read-only (không đổi trạng thái), có nút "Xem
+  ///   đơn" để chuyển sang tab Đơn sửa chữa và trỏ tới đơn đó.
+  /// - Giao dịch thu/chi thủ công: mở dialog sửa như cũ.
+  Future<void> _onTransactionTap(Map<String, dynamic> t) async {
+    final orderId = t['repair_order_id'] as String?;
+    if (orderId == null || orderId.isEmpty) {
+      _showEditTransactionDialog(context, t);
+      return;
+    }
+    try {
+      final row = await SupabaseService.client
+          .from('repair_orders')
+          .select()
+          .eq('id', orderId)
+          .maybeSingle();
+      if (row == null || !mounted) return;
+      final order = ro.RepairOrder.fromMap(row);
+
+      String customerName = '';
+      String customerPhone = '';
+      try {
+        final cust = order.customerId != null
+            ? await SupabaseService.client
+                .from('customers')
+                .select('name, phone')
+                .eq('id', order.customerId!)
+                .maybeSingle()
+            : null;
+        customerName = (cust?['name'] ?? '').toString();
+        customerPhone = (cust?['phone'] ?? '').toString();
+      } catch (_) {}
+
+      await showCompleteOrderDialog(
+        context: context,
+        order: order,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        allowedStatuses: const [],
+        onChangeStatus: (_, __) async {},
+        onGoToOrder: () {
+          globalRepairOrderFocus.value = RepairOrderFocusRequest(
+            orderId: order.id,
+            orderCode: order.code,
+          );
+        },
+      );
+    } catch (_) {
+      // Nếu không tải được đơn, rơi về dialog thường.
+      _showEditTransactionDialog(context, t);
+    }
+  }
+
   Future<void> _showAddTransactionDialog() async {
     final storeId = await _currentStoreId();
     final amountCtrl = TextEditingController();
@@ -842,14 +900,20 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                                       maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11),
                                     ),
                                     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                      const Icon(Icons.edit_outlined, size: 14, color: Colors.grey),
+                                      Icon(
+                                        (t['repair_order_id'] as String?)?.isNotEmpty == true
+                                            ? Icons.chevron_right
+                                            : Icons.edit_outlined,
+                                        size: 14,
+                                        color: Colors.grey,
+                                      ),
                                       const SizedBox(width: 4),
                                       Text(
                                         _currency.format(t['amount'] ?? 0),
                                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isIncome ? Colors.green : Colors.red),
                                       ),
                                     ]),
-                                    onTap: () => _showEditTransactionDialog(context, t),
+                                    onTap: () => _onTransactionTap(t),
                                   ),
                                 );
                               }),

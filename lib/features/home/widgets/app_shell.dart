@@ -1,7 +1,21 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+/// Yêu cầu chuyển tới tab "Đơn sửa chữa" và trỏ tới 1 đơn cụ thể.
+class RepairOrderFocusRequest {
+  final String orderId;
+  final String orderCode;
+  const RepairOrderFocusRequest({required this.orderId, required this.orderCode});
+}
+
+/// Kênh toàn cục để mở tab Đơn sửa chữa và trỏ tới 1 đơn cụ thể.
+/// Màn Thu chi (và các nơi khác) gán giá trị vào đây; AppShell sẽ đổi tab sang
+/// Đơn sửa chữa và RepairOrdersListScreen sẽ tự tìm/tô sáng đúng đơn đó.
+final ValueNotifier<RepairOrderFocusRequest?> globalRepairOrderFocus =
+    ValueNotifier<RepairOrderFocusRequest?>(null);
 
 /// 1 tab nằm trong IndexedStack của AppShell (không có nút quay lại).
 class ShellTab {
@@ -64,6 +78,20 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Khi có yêu cầu trỏ tới 1 đơn sửa chữa (từ màn Thu chi...) thì chuyển
+    // sang tab "Đơn sửa chữa" (luôn là tab đầu tiên trong mọi menu).
+    globalRepairOrderFocus.addListener(_onGlobalFocusRequest);
+  }
+
+  void _onGlobalFocusRequest() {
+    final req = globalRepairOrderFocus.value;
+    if (req == null) return;
+    if (_index != 0) _selectTab(0);
+  }
 
   /// Navigator nội bộ vùng nội dung (desktop): các màn chi tiết mở bằng
   /// Navigator.push sẽ hiển thị NGAY trong vùng nội dung cạnh sidebar,

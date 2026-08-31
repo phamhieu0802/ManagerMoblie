@@ -24,6 +24,7 @@ Future<void> showCompleteOrderDialog({
   required String customerPhone,
   required List<String> allowedStatuses,
   required CompleteOrderStatusChange onChangeStatus,
+  VoidCallback? onGoToOrder,
 }) {
   final isDesktop = Theme.of(context).platform == TargetPlatform.windows ||
       Theme.of(context).platform == TargetPlatform.macOS ||
@@ -44,10 +45,20 @@ Future<void> showCompleteOrderDialog({
             customerPhone: customerPhone,
             allowedStatuses: allowedStatuses,
             onChangeStatus: onChangeStatus,
+            readOnly: onGoToOrder != null,
           ),
         ),
       ),
       actions: [
+        if (onGoToOrder != null)
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onGoToOrder();
+            },
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: const Text('Xem đơn'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('Đóng'),
@@ -65,6 +76,7 @@ class _CompleteOrderCard extends StatefulWidget {
   final String customerPhone;
   final List<String> allowedStatuses;
   final CompleteOrderStatusChange onChangeStatus;
+  final bool readOnly;
 
   const _CompleteOrderCard({
     required this.order,
@@ -72,6 +84,7 @@ class _CompleteOrderCard extends StatefulWidget {
     required this.customerPhone,
     required this.allowedStatuses,
     required this.onChangeStatus,
+    this.readOnly = false,
   });
 
   @override
@@ -187,12 +200,31 @@ class _CompleteOrderCardState extends State<_CompleteOrderCard> {
               ),
             ),
             const SizedBox(width: 6),
-            _StatusDropdownButton(
-              status: _status,
-              options: _statusOptions,
-              saving: _saving,
-              onSelected: _changeStatus,
-            ),
+            if (widget.readOnly)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 10, height: 10,
+                    decoration: BoxDecoration(
+                      color: StatusColors.map[order.status],
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    StatusColors.label[order.status] ?? order.status,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              )
+            else
+              _StatusDropdownButton(
+                status: _status,
+                options: _statusOptions,
+                saving: _saving,
+                onSelected: _changeStatus,
+              ),
           ],
         ),
         const SizedBox(height: 12),
