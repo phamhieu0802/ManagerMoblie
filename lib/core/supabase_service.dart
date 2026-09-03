@@ -188,6 +188,18 @@ Stream<T> autoReconnectStream<T>(
         }
       }
       if (stopped) return;
+      // Đảm bảo socket Realtime thực sự SỐNG trước khi tạo channel mới.
+      // Khi socket rớt (vd: WebSocket đóng bất thường code 1006, hay
+      // `RealtimeSubscribeException(status: channelError)`) mà vẫn subscribe
+      // trên socket chết, phx_join bị buffer rồi timedOut → lỗi cứ lặp lại
+      // mãi. Reconnect socket (nếu connState không open/connecting) rồi mới
+      // tạo channel mới để lỗi không tái diễn.
+      try {
+        await SupabaseService.reconnectRealtimeIfNeeded();
+      } catch (_) {
+        // Không chặn subscribe: vẫn thử tạo channel mới, onError sẽ tự retry.
+      }
+      if (stopped) return;
       sub = create().listen(
         (value) {
           retryCount = 0;
