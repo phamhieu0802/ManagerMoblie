@@ -50,8 +50,11 @@ void _installRealtimeLogging() {
   try {
     final rt = SupabaseService.client.realtime;
     rt.onError((e) {
-      AppLogger.instance.warning(
-        'Realtime mất kết nối',
+      // Rớt socket là chuyện tạm thời (CloudFlare/Supabase proxy restart,
+      // đổi mạng) — app tự kết nối lại qua autoReconnectStream. Ghi info thay
+      // vì warning để không làm nhiễu màn hình Log.
+      AppLogger.instance.info(
+        'Realtime mất kết nối (tự kết nối lại)',
         category: 'realtime',
         data: {'error': '$e'},
       );

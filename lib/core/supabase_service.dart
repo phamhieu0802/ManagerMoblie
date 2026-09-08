@@ -78,6 +78,42 @@ class SupabaseService {
     } catch (_) {}
   }
 
+  static bool _realtimeResetting = false;
+
+  /// Ép kết nối Realtime khởi động lại HOÀN TOÀN (disconnect → connect →
+  /// setAuth). Dùng khi stream retry nhiều lần vẫn không phục hồi: trong
+  /// trường hợp socket "mềm" — `connState` vẫn báo `open` nhưng thực tế đã
+  /// mất kết nối (không nhận heartbeat / server đóng âm thầm) — thì
+  /// [reconnectRealtimeIfNeeded] không làm gì vì thấy `open`, channel mới cứ
+  /// join rồi timedOut → dữ liệu đứng mãi. Bảo vệ bằng cờ để nhiều stream
+  /// cùng dùng 1 socket không đồng loạt reset gây chao đảo.
+  static Future<void> resetRealtime() async {
+    if (_realtimeResetting) return;
+    _realtimeResetting = true;
+    final rt = client.realtime;
+    try {
+      await ensureFreshSession();
+    } catch (_) {}
+    try {
+      // ignore: invalid_use_of_internal_member
+      await rt.disconnect();
+    } catch (_) {}
+    // Đợi socket đóng hẳn trước khi mở lại.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    try {
+      // ignore: invalid_use_of_internal_member
+      await rt.connect();
+    } catch (_) {}
+    try {
+      final token = auth.currentSession?.accessToken;
+      if (token != null) {
+        // ignore: invalid_use_of_internal_member
+        await rt.setAuth(token);
+      }
+    } catch (_) {}
+    _realtimeResetting = false;
+  }
+
   /// true nếu message lỗi cho thấy JWT/token đã hết hạn.
   static bool isAuthExpiredError(Object error) {
     final msg = error.toString().toLowerCase();
@@ -189,13 +225,18 @@ Stream<T> autoReconnectStream<T>(
       }
       if (stopped) return;
       // Đảm bảo socket Realtime thực sự SỐNG trước khi tạo channel mới.
-      // Khi socket rớt (vd: WebSocket đóng bất thường code 1006, hay
+      // Khi socket rớt (vd: WebSocket đóng bất thường code 1006/1001, hay
       // `RealtimeSubscribeException(status: channelError)`) mà vẫn subscribe
       // trên socket chết, phx_join bị buffer rồi timedOut → lỗi cứ lặp lại
-      // mãi. Reconnect socket (nếu connState không open/connecting) rồi mới
-      // tạo channel mới để lỗi không tái diễn.
+      // mãi. Vài lần retry đầu: reconnect socket nếu nó đã đóng rõ ràng. Nếu
+      // vẫn lỗi nhiều lần (socket "mềm" báo `open` nhưng thực tế mất kết nối)
+      // thì ép reset toàn bộ socket để channel mới join lên kết nối tươi.
       try {
-        await SupabaseService.reconnectRealtimeIfNeeded();
+        if (retryCount > 2) {
+          await SupabaseService.resetRealtime();
+        } else {
+          await SupabaseService.reconnectRealtimeIfNeeded();
+        }
       } catch (_) {
         // Không chặn subscribe: vẫn thử tạo channel mới, onError sẽ tự retry.
       }
@@ -207,9 +248,18 @@ Stream<T> autoReconnectStream<T>(
         },
         onError: (Object e) {
           retryCount++;
-          if (retryCount == 1 || retryCount % 10 == 0) {
+          // Ghi log nhẹ nhàng để không làm nhiễu màn hình Log: chỉ 1 dòng info
+          // lần đầu rớt kết nối (không alarm), và 1 dòng warning mỗi 30 lần
+          // retry để theo dõi khi mất kết nối kéo dài.
+          if (retryCount == 1) {
+            AppLogger.instance.info(
+              'Realtime "$label": mất kết nối, tự kết nối lại.',
+              category: 'realtime_retry',
+              data: {'error': '$e', 'attempt': retryCount},
+            );
+          } else if (retryCount % 30 == 0) {
             AppLogger.instance.warning(
-              'Realtime "$label" lỗi, tự kết nối lại (lần $retryCount): $e',
+              'Realtime "$label" vẫn chưa phục hồi sau $retryCount lần.',
               category: 'realtime_retry',
               data: {'error': '$e', 'attempt': retryCount},
             );
