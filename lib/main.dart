@@ -12,6 +12,7 @@ import 'core/firebase_service.dart';
 import 'core/app_logger.dart';
 import 'core/theme/app_theme.dart';
 import 'core/windows_protocol.dart';
+import 'core/window_state_service.dart';
 import 'core/version.dart';
 import 'core/update_service.dart';
 import 'routing/app_router.dart';
@@ -27,6 +28,8 @@ Future<void> main() async {
 
   if (!kIsWeb && Platform.isWindows) {
     registerWindowsOAuthProtocol('io.supabase.flutter');
+    // Khôi phục kích thước & vị trí cửa sổ của phiên trước (desktop Windows).
+    await WindowStateService.init();
   }
 
   await SupabaseService.init();

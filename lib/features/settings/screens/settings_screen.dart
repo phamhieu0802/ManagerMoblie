@@ -1,5 +1,9 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/app_startup.dart';
 import '../../../core/app_toast.dart';
 import '../../../core/error_utils.dart';
 import '../../../core/permissions.dart';
@@ -55,6 +59,13 @@ class SettingsScreen extends ConsumerWidget {
             _DiscordSettingsTile(storeId: profile!.storeId!, profile: profile, ref: ref),
 
           const Divider(),
+
+          // Tùy chọn dành riêng cho máy tính Windows (tự động mở cùng Windows,
+          // ghi nhớ kích thước cửa sổ).
+          if (!kIsWeb && Platform.isWindows) ...[
+            const _WindowsAppTile(),
+            const Divider(),
+          ],
 
           _ChangePasswordTile(),
 
@@ -545,6 +556,66 @@ class _ChangePasswordTile extends StatelessWidget {
               : const Text('Đổi mật khẩu'),
         ),
       ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+// Tùy chọn Windows: tự động mở cùng Windows + ghi nhớ kích thước cửa sổ
+// ──────────────────────────────────────────────
+class _WindowsAppTile extends StatefulWidget {
+  const _WindowsAppTile();
+
+  @override
+  State<_WindowsAppTile> createState() => _WindowsAppTileState();
+}
+
+class _WindowsAppTileState extends State<_WindowsAppTile> {
+  bool? _autoStart;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final enabled = await isAutoStartEnabled();
+    if (mounted) setState(() => _autoStart = enabled);
+  }
+
+  Future<void> _toggle(bool value) async {
+    setState(() => _autoStart = value);
+    final ok = await setAutoStartEnabled(value);
+    if (!mounted) return;
+    if (!ok) {
+      // Thất bại: hoàn nguyên trạng thái + báo lỗi.
+      setState(() => _autoStart = !value);
+      showToast(context, 'Không thể cập nhật cài đặt khởi động cùng Windows.', error: true);
+      return;
+    }
+    showToast(context, value ? 'Sẽ mở app cùng Windows.' : 'Tắt mở cùng Windows.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final autoStart = _autoStart ?? false;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.power_settings_new),
+          title: const Text('Tự động mở cùng Windows'),
+          subtitle: const Text('App mở ngay khi khởi động máy tính'),
+          value: autoStart,
+          onChanged: _autoStart == null ? null : _toggle,
+        ),
+        const ListTile(
+          leading: Icon(Icons.open_in_full_outlined),
+          title: Text('Ghi nhớ kích thước cửa sổ'),
+          subtitle: Text('Mở app lần sau với kích thước & vị trí của phiên trước'),
+        ),
+      ],
     );
   }
 }

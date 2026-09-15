@@ -1,6 +1,6 @@
 [Setup]
 AppName=Manager MSR
-AppVersion=2.1.9
+AppVersion=2.1.10
 AppPublisher=Manager MSR
 DefaultDirName={autopf}\Manager Shop Repair
 DefaultGroupName=Manager MSR

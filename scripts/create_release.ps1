@@ -140,8 +140,11 @@ if (-not (Test-Path $apkPath)) {
     Write-Host "LOI: Khong tim thay $apkPath" -ForegroundColor Red
     exit 1
 }
+# Copy sang dist voi ten co kem version de nguoi dung de nhan biet
+$apkNamedPath = Join-Path $repoRoot "dist\Manager_MSR_$newVersion.apk"
+Copy-Item -Force $apkPath $apkNamedPath
 $apkSize = [math]::Round((Get-Item $apkPath).Length / 1MB, 1)
-Write-Host "APK: $apkPath ($apkSize MB)" -ForegroundColor Gray
+Write-Host "APK: $apkNamedPath ($apkSize MB)" -ForegroundColor Gray
 
 # ============================================================
 # 6. Tao changelog
@@ -180,14 +183,14 @@ Write-Host "`nDang tao GitHub Release..." -ForegroundColor Yellow
 git -C $repoRoot tag -d $tagName 2>&1 | Out-Null
 git -C $repoRoot push origin ":refs/tags/$tagName" 2>&1 | Out-Null
 
-# Tao release moi + upload installer + APK
+# Tao release moi + upload installer + APK (ca ten co version)
 & $ghPath release create $tagName `
     --repo "phamhieu0802/ManagerMoblie" `
     --title "Manager MSR $newVersion" `
     --notes "$Changelog" `
     --latest `
     $installerPath `
-    $apkPath
+    $apkNamedPath`
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "LOI: Tao GitHub Release that bai!" -ForegroundColor Red
@@ -198,5 +201,5 @@ Write-Host "`n ===== THANH CONG =====" -ForegroundColor Green
 Write-Host "Release: https://github.com/phamhieu0802/ManagerMoblie/releases/tag/$tagName" -ForegroundColor Cyan
 Write-Host "Files uploaded:" -ForegroundColor Cyan
 Write-Host "  - Manager_MSR_Setup.exe ($fileSize MB) - Windows installer" -ForegroundColor Gray
-Write-Host "  - app-release.apk ($apkSize MB) - Android APK" -ForegroundColor Gray
+Write-Host "  - Manager_MSR_$newVersion.apk ($apkSize MB) - Android APK" -ForegroundColor Gray
 Write-Host "App se tu check va hien dialog cap nhat khi mo lai." -ForegroundColor Gray
