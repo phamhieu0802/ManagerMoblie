@@ -190,7 +190,7 @@ git -C $repoRoot push origin ":refs/tags/$tagName" 2>&1 | Out-Null
     --notes "$Changelog" `
     --latest `
     $installerPath `
-    $apkNamedPath`
+    $apkNamedPath
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "LOI: Tao GitHub Release that bai!" -ForegroundColor Red
