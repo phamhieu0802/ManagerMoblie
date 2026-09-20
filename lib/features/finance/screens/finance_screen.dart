@@ -267,7 +267,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
       () => SupabaseService.client
           .from('transactions')
           .stream(primaryKey: ['id'])
-          .order('created_at', ascending: false),
+          .order('transaction_date', ascending: false),
       label: 'transactions',
     );
   }
@@ -515,7 +515,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     final categoryCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String type = 'income';
-    String? payMethod;
+    String payMethod = 'cash';
     String? accountId;
     DateTime txDate = DateTime.now();
     bool saving = false;
@@ -540,12 +540,10 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             ButtonSegment(value: 'cash', label: Text('Tiền mặt'), icon: Icon(Icons.money)),
             ButtonSegment(value: 'transfer', label: Text('Chuyển khoản'), icon: Icon(Icons.account_balance)),
           ],
-          selected: payMethod == null ? const <String>{} : {payMethod!},
-          emptySelectionAllowed: true,
+          selected: {payMethod},
           onSelectionChanged: (s) async {
-            final pm = s.isEmpty ? null : s.first;
+            final pm = s.first;
             setStateDialog(() => payMethod = pm);
-            if (pm == null) { setStateDialog(() => accountId = null); return; }
             try {
               final storeId = (await SupabaseService.client.from('profiles')
                   .select('store_id').eq('id', SupabaseService.currentUser?.id ?? '').single())['store_id'];
@@ -586,27 +584,32 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           onPressed: saving ? null : () async {
             final amount = num.tryParse(amountCtrl.text.trim().replaceAll('.', ''));
             if (amount == null || amount <= 0) { setStateDialog(() => error = 'Nhập số tiền hợp lệ.'); return; }
+            final categoryText = categoryCtrl.text.trim();
+            if (categoryText.isEmpty) { setStateDialog(() => error = 'Chọn danh mục.'); return; }
             setStateDialog(() { saving = true; error = null; });
             try {
               final user = SupabaseService.currentUser;
               if (user == null) throw Exception('Chua dang nhap');
               final storeId = (await SupabaseService.client.from('profiles')
                   .select('store_id').eq('id', user.id).single())['store_id'];
+              // Đảm bảo có tài khoản cho hình thức thanh toán đã chọn (tiền mặt/chuyển khoản).
+              if (accountId == null) {
+                final acct = await _ensureAccount(storeId, payMethod == 'cash' ? 'cash' : 'bank');
+                accountId = acct?['id'] as String?;
+              }
+              if (accountId == null) throw Exception('Không tạo được tài khoản thu chi.');
               await SupabaseService.client.from('transactions').insert({
-                'store_id': storeId, 'type': type, 'category': categoryCtrl.text.trim().isEmpty ? null : categoryCtrl.text.trim(),
+                'store_id': storeId, 'type': type, 'category': categoryText,
                 'amount': amount, 'description': descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
                 'account_id': accountId, 'created_by': user.id,
                 'transaction_date': txDate.toIso8601String(),
               });
               final aid = accountId;
-              if (aid != null) {
-                final acct = await SupabaseService.client.from('cash_accounts')
-                    .select('balance').eq('id', aid).single();
-                final curBal = (acct['balance'] as num?) ?? 0;
-                final newBal = type == 'income' ? curBal + amount : curBal - amount;
-                await SupabaseService.client.from('cash_accounts').update({'balance': newBal}).eq('id', aid);
-              }
-              final categoryText = categoryCtrl.text.trim().isEmpty ? 'Khác' : categoryCtrl.text.trim();
+              final acct = await SupabaseService.client.from('cash_accounts')
+                  .select('balance').eq('id', aid!).single();
+              final curBal = (acct['balance'] as num?) ?? 0;
+              final newBal = type == 'income' ? curBal + amount : curBal - amount;
+              await SupabaseService.client.from('cash_accounts').update({'balance': newBal}).eq('id', aid);
               final descText = descCtrl.text.trim();
               await notifyWholeStore(
                 storeId: storeId,
@@ -785,6 +788,14 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           if (_filter != null) {
             rows = rows.where((t) => t['type'] == _filter).toList();
           }
+          // Sắp theo ngày phát sinh thu/chi (transaction_date); nếu thiếu fallback ngày tạo.
+          rows.sort((a, b) {
+            final da = _txDate(a);
+            final db = _txDate(b);
+            if (da == null) return 1;
+            if (db == null) return -1;
+            return db.compareTo(da);
+          });
 
           num filteredIncome = 0, filteredExpense = 0;
           for (final r in rows) {

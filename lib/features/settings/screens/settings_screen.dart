@@ -561,7 +561,7 @@ class _ChangePasswordTile extends StatelessWidget {
 }
 
 // ──────────────────────────────────────────────
-// Tùy chọn Windows: tự động mở cùng Windows + ghi nhớ kích thước cửa sổ
+// Tùy chọn Windows: tự động mở cùng Windows
 // ──────────────────────────────────────────────
 class _WindowsAppTile extends StatefulWidget {
   const _WindowsAppTile();
@@ -609,11 +609,6 @@ class _WindowsAppTileState extends State<_WindowsAppTile> {
           subtitle: const Text('App mở ngay khi khởi động máy tính'),
           value: autoStart,
           onChanged: _autoStart == null ? null : _toggle,
-        ),
-        const ListTile(
-          leading: Icon(Icons.open_in_full_outlined),
-          title: Text('Ghi nhớ kích thước cửa sổ'),
-          subtitle: Text('Mở app lần sau với kích thước & vị trí của phiên trước'),
         ),
       ],
     );

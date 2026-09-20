@@ -31,8 +31,26 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
+
+  // Mở cửa sổ với kích thước & vị trí phiên trước (nếu có) NGAY TỪ ĐẦU,
+  // trước khi Flutter tạo render surface. Tạo window đúng bounds ngay lúc này
+  // giúp engine dựng surface khớp kích thước thật — tránh hiện tượng mờ/méo
+  // khi bị SetWindowPos resize sau khi Flutter đã khởi tạo (bug DPI scaling).
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1200, 900);
+  double saved_x, saved_y, saved_w, saved_h;
+  if (LoadWindowBounds(&saved_x, &saved_y, &saved_w, &saved_h)) {
+    // Chỉ khôi phục khi kích thước hợp lý (không nhỏ hơn window tối thiểu của app).
+    if (saved_w >= 400 && saved_h >= 300) {
+      size = Win32Window::Size(static_cast<unsigned int>(saved_w),
+                               static_cast<unsigned int>(saved_h));
+      // Win32Window::Point dùng unsigned nên bỏ qua tọa độ âm (màn hình trái).
+      if (saved_x >= 0 && saved_y >= 0) {
+        origin = Win32Window::Point(static_cast<unsigned int>(saved_x),
+                                    static_cast<unsigned int>(saved_y));
+      }
+    }
+  }
   if (!window.Create(L"Manager MSR", origin, size)) {
     return EXIT_FAILURE;
   }

@@ -1,26 +1,25 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Ghi nhớ kích thước & vị trí cửa sổ app (máy tính để bàn — Windows).
-/// Mỗi lần đổi kích thước / di chuyển cửa sổ đều lưu vào SharedPreferences;
-/// lần mở sau sẽ khôi phục đúng kích thước & vị trí của phiên làm việc trước.
+///
+/// Mỗi lần đổi kích thước / di chuyển cửa sổ đều ghi bounds (logical px) ra file
+/// `%APPDATA%\Manager Shop Repair\window_bounds.txt`. Vì sao dùng file thay vì
+/// SharedPreferences: `windows/runner/main.cpp` mở cửa sổ TRƯỚC khi Dart chạy —
+/// C++ đọc file này và tạo window với đúng kích thước & vị trí ngay từ đầu, nên
+/// Flutter engine khởi tạo render surface khớp luôn, tránh hiện tượng mờ/méo khi
+/// startup resize (bug DPI scaling của Flutter Windows).
+///
 /// Trên nền tảng không phải desktop (web, Android...) hàm [init] không làm gì.
 class WindowStateService {
   WindowStateService._();
 
-  static const _kX = 'window_x';
-  static const _kY = 'window_y';
-  static const _kWidth = 'window_w';
-  static const _kHeight = 'window_h';
-
-  /// Kích thước tối thiểu cho phép khôi phục (tránh lưu nhầm lúc thu nhỏ).
-  static const _minWidth = 400.0;
-  static const _minHeight = 300.0;
+  /// Tên thư mục dưới %APPDATA% (khớp với runner C++).
+  static const _dirName = 'Manager Shop Repair';
+  static const _fileName = 'window_bounds.txt';
 
   static Timer? _saveDebounce;
 
@@ -31,34 +30,25 @@ class WindowStateService {
     } catch (_) {
       return;
     }
-    await _restoreSavedBounds();
     windowManager.addListener(_WindowStateListener());
-  }
-
-  static Future<void> _restoreSavedBounds() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final x = prefs.getDouble(_kX);
-      final y = prefs.getDouble(_kY);
-      final w = prefs.getDouble(_kWidth);
-      final h = prefs.getDouble(_kHeight);
-      if (x == null || y == null || w == null || h == null) return;
-      if (w < _minWidth || h < _minHeight) return;
-      await windowManager.setBounds(Rect.fromLTWH(x, y, w, h));
-    } catch (_) {
-      // Không gây lỗi nếu không khôi phục được.
-    }
   }
 
   static Future<void> _saveCurrentBounds() async {
     try {
       final bounds = await windowManager.getBounds();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_kX, bounds.left);
-      await prefs.setDouble(_kY, bounds.top);
-      await prefs.setDouble(_kWidth, bounds.width);
-      await prefs.setDouble(_kHeight, bounds.height);
+      final file = File('${_dirPath()}\\$_fileName');
+      await file.parent.create(recursive: true);
+      // 4 dòng: x, y, width, height (logical px) — C++ đọc để tạo window.
+      await file.writeAsString(
+        '${bounds.left}\n${bounds.top}\n${bounds.width}\n${bounds.height}',
+      );
     } catch (_) {}
+  }
+
+  static String _dirPath() {
+    final appData = Platform.environment['APPDATA'];
+    if (appData == null || appData.isEmpty) return _dirName;
+    return '$appData\\$_dirName';
   }
 
   /// Gộp nhiều sự kiện resize/move liên tiếp sync vào 1 lần lưu duy nhất.

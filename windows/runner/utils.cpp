@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <windows.h>
 
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
@@ -66,4 +68,45 @@ std::string Utf8FromUtf16(const wchar_t* utf16_string) {
     return std::string();
   }
   return utf8_string;
+}
+
+// Reads the saved window bounds file written by Dart (WindowStateService).
+// Use %APPDATA% directly (same resolution as Dart) so both sides agree on the
+// path. Returns false if the file is missing or values are unusable.
+bool LoadWindowBounds(double* x, double* y, double* width, double* height) {
+  wchar_t app_data[MAX_PATH];
+  DWORD len = ::GetEnvironmentVariableW(L"APPDATA", app_data, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH) {
+    return false;
+  }
+
+  std::wstring path = std::wstring(app_data) + L"\\Manager Shop Repair\\window_bounds.txt";
+  std::wifstream file(path);
+  if (!file.is_open()) {
+    return false;
+  }
+
+  double values[4];
+  std::wstring line;
+  for (int i = 0; i < 4; i++) {
+    if (!std::getline(file, line)) {
+      return false;
+    }
+    try {
+      values[i] = std::stod(line);
+    } catch (...) {
+      return false;
+    }
+  }
+
+  // Khớp cửa sổ tối thiểu của app (400x300); loại giá trị vô lý.
+  if (values[2] <= 0 || values[3] <= 0) {
+    return false;
+  }
+
+  *x = values[0];
+  *y = values[1];
+  *width = values[2];
+  *height = values[3];
+  return true;
 }

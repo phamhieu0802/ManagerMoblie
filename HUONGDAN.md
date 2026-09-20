@@ -1,6 +1,8 @@
 # Hướng Dẫn Cài Đặt & Sử Dụng
 
-**Manager MSR · v2.1.3** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows).
+**Manager MSR · v2.1.11** — Phần mềm quản lý cửa hàng sửa chữa điện thoại (Android + Windows + Linux*).
+
+_Linux*: bản build Linux do cộng đồng tự build từ source (xem `HUONGDAN_LINUX.md`), hỗ trợ bằng màn hình điều khiển._
 
 ## 0. Xem hướng dẫn ngay trong app
 
@@ -164,8 +166,11 @@ flutter run -d windows
 - **OAuth Google**: dùng localhost HTTP server + trình duyệt, không cần custom URL scheme
 - **Thông báo toast**: hiển thị notification qua `flutter_local_notifications` (Supabase Realtime → Windows toast)
 - **In ấn ESC/POS**: gửi lệnh init printer + UTF-8 + cắt giấy qua TCP/IP
-- **Tự động hồi sinh Realtime**: định kỳ kiểm tra kết nối và tự kết nối lại nếu socket bị rớt
+- **Tự động hồi sinh Realtime**: định kỳ kiểm tra kết nối và tự kết nối lại nếu socket bị rớt; nếu rớt quá nhiều lần liên tiếp sẽ ép reset hoàn toàn để khôi phục kênh nhanh
 - **Đăng ký OAuth protocol**: tự động tạo registry key `io.supabase.flutter://` khi khởi động
+- **Tự khởi động cùng Windows**: vào **Cài đặt → Windows** bật/tắt "Khởi động cùng Windows" (lưu vào registry `HKCU\...\Run`, chỉ cần bật 1 lần sau khi cài đặt)
+- **Ghi nhớ cửa sổ**: tự lưu và khôi phục kích thước/vị trí cửa sổ khi đóng & mở lại app
+- **Xem đơn từ giao dịch**: trong màn hình Thu chi, bấm vào giao dịch có mã đơn sửa chữa sẽ mở xem đơn (chế độ chỉ đọc) — bấm "Đi tới đơn" để chuyển thẳng sang tab Đơn sửa chữa
 
 ### 7.4. Danh sách đơn sửa chữa — mẹo dùng nhanh
 

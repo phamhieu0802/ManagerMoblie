@@ -28,7 +28,8 @@ Future<void> main() async {
 
   if (!kIsWeb && Platform.isWindows) {
     registerWindowsOAuthProtocol('io.supabase.flutter');
-    // Khôi phục kích thước & vị trí cửa sổ của phiên trước (desktop Windows).
+    // Theo dõi kích thước & vị trí cửa sổ để ghi lại cho phiên sau.
+    // (Runner C++ mở cửa sổ với bounds đã lưu ngay từ đầu — xem main.cpp.)
     await WindowStateService.init();
   }
 
